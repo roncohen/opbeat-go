@@ -105,6 +105,7 @@ type Event struct {
 	User       *User                   `json:"user"`
 	Http       *Http                   `json:"http"`
 	Stacktrace *Stacktrace             `json:"stacktrace"`
+	Machine    map[string]string       `json:"machine"`
 }
 
 // An iso8601 timestamp without the timezone.
@@ -324,6 +325,12 @@ func (client Client) capture(ev *Event) error {
 
 	if ev.Culprit == "" {
 		ev.Culprit = fmt.Sprintf("%s in %s", ev.Stacktrace.Frames[0].Filename, ev.Stacktrace.Frames[0].Function)
+	}
+
+	if len(ev.Machine) == 0 {
+		if hostname, err := os.Hostname(); err == nil {
+			ev.Machine = map[string]string{"hostname": hostname}
+		}
 	}
 
 	buf := new(bytes.Buffer)

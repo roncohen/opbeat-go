@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"testing"
 )
@@ -224,6 +225,12 @@ func TestCaptureErrorWithOptionsStackSize(t *testing.T) {
 				t.Errorf("expected http/headers to be %v but was %v", expected_headers, http["method"])
 			}
 
+			expected_hostname, _ := os.Hostname()
+
+			machine := requestBody["machine"].(map[string]interface{})
+			if machine["hostname"] != expected_hostname {
+				t.Errorf("expected machine/hostname to be '%v', was '%v'", expected_hostname, machine["hostname"])
+			}
 		},
 	)
 }
