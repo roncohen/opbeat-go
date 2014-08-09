@@ -1,0 +1,427 @@
+/*
+
+	Package opbeat-go is a client for sending messages and exceptions to Opbeat: https://opbeat.com
+
+	Usage:
+
+	Create a new client using the NewClient() function. After the client has been created use the CaptureMessage or CaptureError
+	methods to send messages and errors to the Opbeat.
+
+		client, err := opbeat.NewClient(org_id, app_id, secret_token)
+		...
+		id, err := client.CaptureMessage("some text")
+
+	If you want to have more finegrained control over the send event, you can create the event instance yourself
+
+		client.Capture(&opbeat.Event{Message: "Some Text", Logger:"auth"})
+
+*/
+package opbeat
+
+import (
+	"bytes"
+	"compress/zlib"
+	"crypto/rand"
+	"crypto/tls"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+type Logger interface {
+	Printf(string, ...interface{})
+}
+
+type Client struct {
+	URL        *url.URL
+	config     *ClientConfig
+	httpClient *http.Client
+}
+
+type Stacktrace struct {
+	Frames []Frame `json:"frames"`
+}
+
+type Frame struct {
+	AbsFilename string `json:"abs_path"`
+	Filename    string `json:"filename"`
+	LineNo      int    `json:"lineno"`
+	Function    string `json:"function"`
+	InApp       bool   `json:"in_app"`
+}
+
+type User struct {
+	Id              string `json:"id"`
+	Email           string `json:"email"`
+	Username        string `json:"username"`
+	IsAuthenticated bool   `json:"is_authenticated"`
+}
+
+type Http struct {
+	Url     string `json:"url"`
+	Method  string `json:"method"`
+	Headers map[string]string
+}
+
+func NewHttpFromRequest(r *http.Request) *Http {
+	// Multiple values for the same key will
+	// result in the same key being included multiple
+	// times according to http://golang.org/src/pkg/net/http/header.go?#L145
+	headers := make(map[string]string)
+	for k, v := range r.Header {
+		headers[k] = v[len(v)-1] // Just take the last one for now
+	}
+
+	return &Http{
+		Url:     r.URL.String(),
+		Method:  r.Method,
+		Headers: headers,
+	}
+}
+
+type EventOptions struct {
+	Extra *map[string]interface{} `json:"extra"`
+	User  *User                   `json:"user"`
+	Http  *Http                   `json:"http"`
+}
+
+type Event struct {
+	EventId    string                  `json:"event_id"`
+	Message    string                  `json:"message"`
+	Timestamp  string                  `json:"timestamp"`
+	Level      string                  `json:"level"`
+	Logger     string                  `json:"logger"`
+	Culprit    string                  `json:"culprit"`
+	Extra      *map[string]interface{} `json:"extra"`
+	User       *User                   `json:"user"`
+	Http       *Http                   `json:"http"`
+	Stacktrace *Stacktrace             `json:"stacktrace"`
+}
+
+// An iso8601 timestamp without the timezone.
+const iso8601 = "2006-01-02T15:04:05"
+
+const defaultHost = "opbeat.com"
+const defaultTimeout = 3 * time.Second
+
+type ClientConfig struct {
+	OrganizationId string
+	AppId          string
+	SecretToken    string
+	Host           string
+	SkipVerify     bool
+	ConnectTimeout time.Duration
+	ReadTimeout    time.Duration
+	Logger
+}
+
+func fillConfig(config *ClientConfig) error {
+	if len(config.OrganizationId) == 0 {
+		config.OrganizationId = os.Getenv("OPBEAT_ORGANIZATION_ID")
+	}
+
+	if len(config.AppId) == 0 {
+		config.OrganizationId = os.Getenv("OPBEAT_APP_ID")
+	}
+
+	if len(config.SecretToken) == 0 {
+		config.SecretToken = os.Getenv("OPBEAT_SECRET_TOKEN")
+	}
+
+	if len(config.Host) == 0 {
+		config.Host = os.Getenv("OPBEAT_HOST")
+		if len(config.Host) == 0 {
+			config.Host = defaultHost
+		}
+	}
+
+	if config.ConnectTimeout < 1 {
+		connectTimeout := os.Getenv("OPBEAT_CONNECT_TIMEOUT")
+		if len(connectTimeout) != 0 {
+			connectTimeoutSec, err := strconv.Atoi(connectTimeout)
+			if err != nil {
+				return err
+			}
+			config.ConnectTimeout = time.Duration(connectTimeoutSec) * time.Second
+		} else {
+			config.ConnectTimeout = defaultTimeout
+		}
+	}
+
+	if config.ReadTimeout < 1 {
+		readTimeout := os.Getenv("OPBEAT_READ_TIMEOUT")
+		if len(readTimeout) != 0 {
+			readTimeoutSec, err := strconv.Atoi(readTimeout)
+			if err != nil {
+				return err
+			}
+			config.ReadTimeout = time.Duration(readTimeoutSec) * time.Second
+		} else {
+			config.ReadTimeout = defaultTimeout
+		}
+	}
+
+	if config.SkipVerify {
+		if config.Logger != nil {
+			config.Printf("Warning: SkipVerify is true. Remote certificates not be verified")
+		}
+	}
+	return nil
+}
+
+func checkConfig(config ClientConfig) error {
+	if len(config.OrganizationId) == 0 {
+		return errors.New("Missing OrganizationId. Can be set via environment variable OPBEAT_ORGANIZATION_ID")
+	}
+
+	if len(config.AppId) == 0 {
+		return errors.New("Missing AppId. Can be set via environment variable OPBEAT_APP_ID")
+	}
+
+	if len(config.SecretToken) == 0 {
+		return errors.New("Missing SecretToken. Can be set via environment variable OPBEAT_SECRET_TOKEN")
+	}
+	return nil
+}
+
+// NewClient creates a new client. It will attempt to read missing parameters from the environment
+func NewClient(config ClientConfig) (client *Client, err error) {
+	err = fillConfig(&config)
+	if err != nil {
+		return nil, err
+	}
+	if err = checkConfig(config); err != nil {
+		return nil, err
+	}
+
+	url, _ := url.Parse(fmt.Sprintf(
+		"https://%s/api/v1/organizations/%s/apps/%s/errors/",
+		config.Host,
+		config.OrganizationId,
+		config.AppId))
+
+	transport := &transport{
+		httpTransport: &http.Transport{
+			Dial:            timeoutDialer(config.ConnectTimeout),
+			Proxy:           http.ProxyFromEnvironment,
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: config.SkipVerify},
+		}, timeout: config.ReadTimeout}
+	httpClient := &http.Client{Transport: transport}
+	return &Client{URL: url, config: &config, httpClient: httpClient}, nil
+}
+
+// CaptureMessage sends a message to Opbeat
+// It returns nil or any error that occurred.
+// `options` allows for additional info to be included.
+func (client Client) Capture(ev *Event) (string, error) {
+	err := client.capture(ev)
+
+	if err != nil {
+		return "", err
+	}
+	return ev.EventId, nil
+}
+
+// CaptureMessage sends a message to Opbeat
+// It returns nil or any error that occurred.
+// Use `CaptureMessageWithOptions` to include additional info
+func (client Client) CaptureMessage(message ...string) (string, error) {
+	msg := strings.Join(message, " ")
+	ev := Event{Message: msg}
+	err := client.capture(&ev)
+	if err != nil {
+		return "", err
+	}
+	return ev.EventId, nil
+}
+
+// CaptureMessageWithOptions sends a message to Opbeat
+// It returns nil or any error that occurred.
+// `options` allows for additional info to be included.
+func (client Client) CaptureMessageWithOptions(message string, options *EventOptions) (string, error) {
+	ev := client.eventWithOptions(options)
+	ev.Message = message
+
+	err := client.capture(ev)
+
+	if err != nil {
+		return "", err
+	}
+	return ev.EventId, nil
+}
+
+// CaptureError sends a message to Opbeat
+// It returns nil or any error that occurred.
+func (client Client) CaptureError(err error) (string, error) {
+	ev := Event{Message: err.Error()}
+	opbeatErr := client.capture(&ev)
+
+	if opbeatErr != nil {
+		return "", opbeatErr
+	}
+	return ev.EventId, nil
+}
+
+// CaptureErrorWithOptions sends a message to Opbeat
+// It returns nil or any error that occurred.
+// `options` allows for additional info to be included.
+func (client Client) CaptureErrorWithOptions(err error, options *EventOptions) (string, error) {
+	ev := client.eventWithOptions(options)
+	ev.Message = err.Error()
+
+	opbeatErr := client.capture(ev)
+
+	if opbeatErr != nil {
+		return "", opbeatErr
+	}
+	return ev.EventId, nil
+}
+
+func (client Client) eventWithOptions(options *EventOptions) *Event {
+	return &Event{
+		Extra: options.Extra,
+		User:  options.User,
+		Http:  options.Http,
+	}
+}
+
+// Capture sends the given event to Opbeat.
+// Fields which are left blank are populated with default values.
+// Expects to be called as the 2nd in the stackstrace in this library.
+// E.g. user code calls a method in the library which calls this.
+func (client Client) capture(ev *Event) error {
+	// Fill in defaults
+	if ev.EventId == "" {
+		eventId, err := uuid4()
+		if err != nil {
+			return err
+		}
+		ev.EventId = eventId
+	}
+	if ev.Level == "" {
+		ev.Level = "error"
+	}
+	if ev.Logger == "" {
+		ev.Logger = "root"
+	}
+	if ev.Timestamp == "" {
+		now := time.Now().UTC()
+		ev.Timestamp = now.Format(iso8601)
+	}
+
+	if ev.Stacktrace == nil {
+		ev.Stacktrace = stack(3)
+	}
+
+	if ev.Culprit == "" {
+		ev.Culprit = fmt.Sprintf("%s in %s", ev.Stacktrace.Frames[0].Filename, ev.Stacktrace.Frames[0].Function)
+	}
+
+	buf := new(bytes.Buffer)
+	writer := zlib.NewWriter(buf)
+	jsonEncoder := json.NewEncoder(writer)
+
+	if err := jsonEncoder.Encode(ev); err != nil {
+		return err
+	}
+
+	err := writer.Close()
+	if err != nil {
+		return err
+	}
+
+	err = client.send(buf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// sends a packet to Opbeat
+func (client Client) send(packet []byte) (err error) {
+	apiURL := *client.URL
+	location := apiURL.String()
+
+	buf := bytes.NewBuffer(packet)
+	req, err := http.NewRequest("POST", location, buf)
+	if err != nil {
+		return err
+	}
+
+	authHeader := fmt.Sprintf("Bearer %s", client.config.SecretToken)
+	req.Header.Add("Authorization", authHeader)
+	req.Header.Add("Content-Type", "application/octet-stream")
+	req.Header.Add("Connection", "keep-alive")
+	req.Header.Add("Accept-Encoding", "identity")
+
+	resp, err := client.httpClient.Do(req)
+
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case 202:
+		return nil
+	default:
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("While reading response body of failed request: %v", err)
+		}
+
+		return fmt.Errorf("Opbeat response %d: %s", resp.Status, string(body[:]))
+	}
+	// should never get here
+	panic("oops")
+}
+
+func uuid4() (string, error) {
+	//TODO: Verify this algorithm or use an external library
+	uuid := make([]byte, 16)
+	n, err := rand.Read(uuid)
+	if n != len(uuid) || err != nil {
+		return "", err
+	}
+	uuid[8] = 0x80
+	uuid[4] = 0x40
+
+	return hex.EncodeToString(uuid), nil
+}
+
+func timeoutDialer(cTimeout time.Duration) func(net, addr string) (c net.Conn, err error) {
+	return func(netw, addr string) (net.Conn, error) {
+		conn, err := net.DialTimeout(netw, addr, cTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return conn, nil
+	}
+}
+
+// A custom http.Transport which allows us to put a timeout on each request.
+type transport struct {
+	httpTransport *http.Transport
+	timeout       time.Duration
+}
+
+// Make use of Go 1.1's CancelRequest to close an outgoing connection if it
+// took longer than [timeout] to get a response.
+func (T *transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	timer := time.AfterFunc(T.timeout, func() {
+		T.httpTransport.CancelRequest(req)
+	})
+	defer timer.Stop()
+	return T.httpTransport.RoundTrip(req)
+}
