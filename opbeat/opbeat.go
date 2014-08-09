@@ -23,7 +23,7 @@
 			SecretToken:    SecretToken,
 		}
 
-	    client, _ := NewClient(&config)
+		client, _ := NewClient(&config)
 		_, err := client.CaptureErrorWithOptions(
 			errors.New("Waaat!"),
 			&EventOptions{
