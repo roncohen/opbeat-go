@@ -1,6 +1,6 @@
 /*
 
-	Package opbeat-go is a client for sending messages and exceptions to Opbeat: https://opbeat.com
+	Package opbeat-go is an experimental client for sending messages and exceptions to Opbeat: https://opbeat.com
 
 	Usage:
 
