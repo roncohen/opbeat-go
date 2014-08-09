@@ -18,7 +18,7 @@ func TestNewClientSetsProperties(t *testing.T) {
 		AppId:          "app_id",
 		SecretToken:    "token",
 	}
-	client, err := NewClient(config)
+	client, err := NewClient(&config)
 
 	if err != nil {
 		t.Error(err)
@@ -53,7 +53,7 @@ func SkipTestClientIntegrationAgainstOpbeatCom(t *testing.T) {
 	}
 	req, _ := http.NewRequest("GET", "http://example.com", nil)
 
-	client, _ := NewClient(config)
+	client, _ := NewClient(&config)
 	_, err := client.CaptureMessageWithOptions(
 		"message",
 		&EventOptions{
@@ -113,7 +113,7 @@ func testRequest(t *testing.T, test_call func(*testing.T, *Client), assertions f
 		SkipVerify:     true,
 	}
 
-	client, _ := NewClient(config)
+	client, _ := NewClient(&config)
 
 	test_call(t, client)
 

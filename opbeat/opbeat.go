@@ -5,15 +5,38 @@
 	Usage:
 
 	Create a new client using the NewClient() function. After the client has been created use the CaptureMessage or CaptureError
-	methods to send messages and errors to the Opbeat.
+	methods to send messages and errors to the Opbeat. Passing `nil` will load configuration from environment variables.
 
-		client, err := opbeat.NewClient(org_id, app_id, secret_token)
+		client, err := opbeat.NewClient(nil)
 		...
 		id, err := client.CaptureMessage("some text")
 
 	If you want to have more finegrained control over the send event, you can create the event instance yourself
 
 		client.Capture(&opbeat.Event{Message: "Some Text", Logger:"auth"})
+
+	Finally, a complete example could look like this:
+
+		config := ClientConfig{
+			OrganizationId: OrgId,
+			AppId:          AppId,
+			SecretToken:    SecretToken,
+		}
+
+	    client, _ := NewClient(&config)
+		_, err := client.CaptureErrorWithOptions(
+			errors.New("Waaat!"),
+			&EventOptions{
+				User: &User{
+					Id:              "99",
+					Username:        "roncohen",
+					Email:           "ron@opbeat.com",
+					IsAuthenticated: true,
+				},
+				Http: NewHttpFromRequest(req),
+				Extra: &map[string]interface{}{"hello": "world"},
+			},
+		)
 
 */
 package opbeat
@@ -179,7 +202,7 @@ func fillConfig(config *ClientConfig) error {
 	return nil
 }
 
-func checkConfig(config ClientConfig) error {
+func checkConfig(config *ClientConfig) error {
 	if len(config.OrganizationId) == 0 {
 		return errors.New("Missing OrganizationId. Can be set via environment variable OPBEAT_ORGANIZATION_ID")
 	}
@@ -195,8 +218,8 @@ func checkConfig(config ClientConfig) error {
 }
 
 // NewClient creates a new client. It will attempt to read missing parameters from the environment
-func NewClient(config ClientConfig) (client *Client, err error) {
-	err = fillConfig(&config)
+func NewClient(config *ClientConfig) (client *Client, err error) {
+	err = fillConfig(config)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +240,7 @@ func NewClient(config ClientConfig) (client *Client, err error) {
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: config.SkipVerify},
 		}, timeout: config.ReadTimeout}
 	httpClient := &http.Client{Transport: transport}
-	return &Client{URL: url, config: &config, httpClient: httpClient}, nil
+	return &Client{URL: url, config: config, httpClient: httpClient}, nil
 }
 
 // CaptureMessage sends a message to Opbeat
