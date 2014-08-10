@@ -74,7 +74,6 @@ func NewHttpFromRequest(r *http.Request) *Http {
 	}
 
 	fullUrl := scheme + "://" + r.Host + r.URL.String()
-	fmt.Printf("r.URL.String(): %v, Host: %v, r.RequestURI: %v, scheme: %v, url: %v", r.URL.String(), r.Host, r.RequestURI, scheme, fullUrl)
 
 	return &Http{
 		Url:     fullUrl,
@@ -328,7 +327,7 @@ func (client Client) capture(ev *Event) error {
 		}
 	}
 
-	client.log("Sending event to opbeat server: %v", ev.Message)
+	client.log("Sending event to Opbeat server: %v", ev.Message)
 
 	buf := new(bytes.Buffer)
 	writer := zlib.NewWriter(buf)
@@ -417,8 +416,8 @@ func (client Client) log(format string, args ...interface{}) {
 		client.config.Logger.Printf(format, args...)
 	}
 }
+
 func uuid4() (string, error) {
-	//TODO: Verify this algorithm or use an external library
 	uuid := make([]byte, 16)
 	n, err := rand.Read(uuid)
 	if n != len(uuid) || err != nil {
