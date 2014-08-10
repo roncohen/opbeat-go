@@ -15,12 +15,13 @@
 
 		client.Capture(&opbeat.Event{Message: "Some Text", Logger:"auth"})
 
-	Finally, a complete example could look like this:
+	A complete example could look like this:
 
 		config := ClientConfig{
 			OrganizationId: OrgId,
 			AppId:          AppId,
 			SecretToken:    SecretToken,
+			Logger:         log.New(os.Stderr, "OPBEAT ", log.LstdFlags),
 		}
 
 		client, _ := NewClient(&config)
@@ -36,6 +37,20 @@
 				Http: NewHttpFromRequest(req),
 				Extra: &map[string]interface{}{"hello": "world"},
 			},
+		)
+
+	This library comes with a convenient http handler that plugs right into your handler chain:
+
+		client, _ := NewClient(&config)
+		var somethingInterfacy interface{} = "a string"
+
+		s := http.NewServer(
+			OpbeatHandler(client, http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					// A mistake
+					w.Write(somethingInterfacy.([]byte))
+				})
+			)
 		)
 
 */
@@ -95,6 +110,8 @@ type Http struct {
 	Headers map[string]string
 }
 
+// Extract interesting information from a regular http.Request struct
+// and return a Http object
 func NewHttpFromRequest(r *http.Request) *Http {
 	// Multiple values for the same key will
 	// result in the same key being included multiple
@@ -104,8 +121,18 @@ func NewHttpFromRequest(r *http.Request) *Http {
 		headers[k] = v[len(v)-1] // Just take the last one for now
 	}
 
+	scheme := ""
+	if r.TLS != nil {
+		scheme = "https"
+	} else {
+		scheme = "http"
+	}
+
+	fullUrl := scheme + "://" + r.Host + r.URL.String()
+	fmt.Printf("r.URL.String(): %v, Host: %v, r.RequestURI: %v, scheme: %v, url: %v", r.URL.String(), r.Host, r.RequestURI, scheme, fullUrl)
+
 	return &Http{
-		Url:     r.URL.String(),
+		Url:     fullUrl,
 		Method:  r.Method,
 		Headers: headers,
 	}
@@ -356,6 +383,8 @@ func (client Client) capture(ev *Event) error {
 		}
 	}
 
+	client.log("Sending event to opbeat server: %v", ev.Message)
+
 	buf := new(bytes.Buffer)
 	writer := zlib.NewWriter(buf)
 	jsonEncoder := json.NewEncoder(writer)
@@ -404,19 +433,45 @@ func (client Client) send(packet []byte) (err error) {
 
 	switch resp.StatusCode {
 	case 202:
+		if resp.Header["Location"] != nil {
+			client.log("Event details at %s", resp.Header["Location"][0])
+		}
 		return nil
 	default:
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("While reading response body of failed request: %v", err)
+			obErr := fmt.Errorf("While reading response body of failed request: %v", err)
+			client.log(obErr.Error())
+			return obErr
 		}
 
-		return fmt.Errorf("Opbeat response %d: %s", resp.Status, string(body[:]))
+		obErr := fmt.Errorf("Opbeat response %v: %s", resp.Status, string(body[:]))
+		client.log(obErr.Error())
+		return obErr
 	}
-	// should never get here
-	panic("oops")
 }
 
+// Useful handler to catch panics further down the handler chain
+func OpbeatHandler(client *Client, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				client.CaptureMessageWithOptions(fmt.Sprintf("%v", rec),
+					&EventOptions{
+						Http: NewHttpFromRequest(r),
+					},
+				)
+			}
+		}()
+		h.ServeHTTP(w, r)
+	})
+}
+
+func (client Client) log(format string, args ...interface{}) {
+	if client.config.Logger != nil {
+		client.config.Logger.Printf(format, args...)
+	}
+}
 func uuid4() (string, error) {
 	//TODO: Verify this algorithm or use an external library
 	uuid := make([]byte, 16)

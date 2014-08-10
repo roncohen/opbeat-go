@@ -4,6 +4,7 @@ import (
 	"compress/zlib"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -68,6 +69,29 @@ func SkipTestClientIntegrationAgainstOpbeatCom(t *testing.T) {
 		},
 	)
 
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestMiddleware(t *testing.T) {
+	config := ClientConfig{
+		OrganizationId: "733513d2c0bf4d4ba783a33380e87960",
+		AppId:          "4093730eb9",
+		SecretToken:    "aeb10c7cb87f2ba40a26d1981ee3c3d0e585dcdf",
+		Logger:         log.New(os.Stderr, "OPBEAT: ", log.LstdFlags),
+	}
+	client, _ := NewClient(&config)
+	var somethingInterfacy interface{} = "a string"
+
+	ts := httptest.NewServer(OpbeatHandler(client, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			// A mistake
+			w.Write(somethingInterfacy.([]byte))
+		})))
+	defer ts.Close()
+
+	_, err := http.Get(ts.URL)
 	if err != nil {
 		t.Error(err)
 	}
