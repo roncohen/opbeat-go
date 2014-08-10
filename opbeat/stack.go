@@ -8,8 +8,7 @@ import (
 
 func stackFilter(file string, line int, packageName, funcName string) bool {
 	return (packageName == "runtime" && funcName == "panic") ||
-		(packageName == "runtime" && funcName == "goexit") ||
-		(packageName == "github.com/roncohen/opbeat-go/opbeat/opbeat")
+		(packageName == "runtime" && funcName == "goexit")
 }
 
 func makeRelative(file string) string {
