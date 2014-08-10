@@ -89,7 +89,6 @@ type EventOptions struct {
 }
 
 type Event struct {
-	EventId    string                  `json:"event_id"`
 	Message    string                  `json:"message"`
 	Timestamp  string                  `json:"timestamp"`
 	Level      string                  `json:"level"`
@@ -218,12 +217,12 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 // It returns nil or any error that occurred.
 // `options` allows for additional info to be included.
 func (client Client) Capture(ev *Event) (string, error) {
-	err := client.capture(ev)
+	eventLink, err := client.capture(ev)
 
 	if err != nil {
 		return "", err
 	}
-	return ev.EventId, nil
+	return eventLink, nil
 }
 
 // CaptureMessage sends a message to Opbeat
@@ -232,11 +231,11 @@ func (client Client) Capture(ev *Event) (string, error) {
 func (client Client) CaptureMessage(message ...string) (string, error) {
 	msg := strings.Join(message, " ")
 	ev := Event{Message: msg}
-	err := client.capture(&ev)
+	eventLink, err := client.capture(&ev)
 	if err != nil {
 		return "", err
 	}
-	return ev.EventId, nil
+	return eventLink, nil
 }
 
 // CaptureMessageWithOptions sends a message to Opbeat
@@ -246,24 +245,24 @@ func (client Client) CaptureMessageWithOptions(message string, options *EventOpt
 	ev := client.eventWithOptions(options)
 	ev.Message = message
 
-	err := client.capture(ev)
+	eventLink, err := client.capture(ev)
 
 	if err != nil {
 		return "", err
 	}
-	return ev.EventId, nil
+	return eventLink, nil
 }
 
 // CaptureError sends a message to Opbeat
 // It returns nil or any error that occurred.
 func (client Client) CaptureError(err error) (string, error) {
 	ev := Event{Message: err.Error()}
-	opbeatErr := client.capture(&ev)
+	eventLink, opbeatErr := client.capture(&ev)
 
 	if opbeatErr != nil {
 		return "", opbeatErr
 	}
-	return ev.EventId, nil
+	return eventLink, nil
 }
 
 // CaptureErrorWithOptions sends a message to Opbeat
@@ -273,12 +272,12 @@ func (client Client) CaptureErrorWithOptions(err error, options *EventOptions) (
 	ev := client.eventWithOptions(options)
 	ev.Message = err.Error()
 
-	opbeatErr := client.capture(ev)
+	eventLink, opbeatErr := client.capture(ev)
 
 	if opbeatErr != nil {
 		return "", opbeatErr
 	}
-	return ev.EventId, nil
+	return eventLink, nil
 }
 
 func (client Client) eventWithOptions(options *EventOptions) *Event {
@@ -293,15 +292,8 @@ func (client Client) eventWithOptions(options *EventOptions) *Event {
 // Fields which are left blank are populated with default values.
 // Expects to be called as the 2nd in the stackstrace in this library.
 // E.g. user code calls a method in the library which calls this.
-func (client Client) capture(ev *Event) error {
+func (client Client) capture(ev *Event) (string, error) {
 	// Fill in defaults
-	if ev.EventId == "" {
-		eventId, err := uuid4()
-		if err != nil {
-			return err
-		}
-		ev.EventId = eventId
-	}
 	if ev.Level == "" {
 		ev.Level = "error"
 	}
@@ -334,31 +326,31 @@ func (client Client) capture(ev *Event) error {
 	jsonEncoder := json.NewEncoder(writer)
 
 	if err := jsonEncoder.Encode(ev); err != nil {
-		return err
+		return "", err
 	}
 
 	err := writer.Close()
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	err = client.send(buf.Bytes())
+	eventLink, err := client.send(buf.Bytes())
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return eventLink, nil
 }
 
 // sends a packet to Opbeat
-func (client Client) send(packet []byte) (err error) {
+func (client Client) send(packet []byte) (eventLink string, err error) {
 	apiURL := *client.URL
 	location := apiURL.String()
 
 	buf := bytes.NewBuffer(packet)
 	req, err := http.NewRequest("POST", location, buf)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	authHeader := fmt.Sprintf("Bearer %s", client.config.SecretToken)
@@ -370,7 +362,7 @@ func (client Client) send(packet []byte) (err error) {
 	resp, err := client.httpClient.Do(req)
 
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	defer resp.Body.Close()
@@ -379,19 +371,20 @@ func (client Client) send(packet []byte) (err error) {
 	case 202:
 		if resp.Header["Location"] != nil {
 			client.log("Event details at %s", resp.Header["Location"][0])
+			return resp.Header["Location"][0], nil
 		}
-		return nil
+		return "", nil
 	default:
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			obErr := fmt.Errorf("While reading response body of failed request: %v", err)
 			client.log(obErr.Error())
-			return obErr
+			return "", obErr
 		}
 
 		obErr := fmt.Errorf("Opbeat response %v: %s", resp.Status, string(body[:]))
 		client.log(obErr.Error())
-		return obErr
+		return "", obErr
 	}
 }
 
