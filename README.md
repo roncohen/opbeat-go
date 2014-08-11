@@ -1,6 +1,6 @@
 # opbeat-go
 
-Experimental Go library for communicating with Opbeat. Inspired by [gobrake](https://github.com/airbrake/gobrake).
+Experimental Go/Golang library for communicating with Opbeat. Inspired by [gobrake](https://github.com/airbrake/gobrake).
 
 [![Build Status](https://travis-ci.org/roncohen/opbeat-go.svg?branch=master)](https://travis-ci.org/roncohen/opbeat-go)
 
