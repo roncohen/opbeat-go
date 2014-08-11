@@ -4,9 +4,9 @@ Package opbeat-go is an experimental client for sending messages and exceptions 
 Usage
 
 Create a new client using the NewClient() function. After the client has been created use the CaptureMessage or CaptureError
-methods to send messages and errors to the Opbeat. Passing `nil` will load configuration from environment variables.
+methods to send messages and errors to the Opbeat. Variables loaded are: OPBEAT_ORGANIZATION_ID, OPBEAT_APP_ID, OPBEAT_SECRET_TOKEN, OPBEAT_HOST, OPBEAT_CONNECT_TIMEOUT, OPBEAT_READ_TIMEOUT
 
-	client, err := opbeat.NewClient(nil)
+	client, err := opbeat.NewClientFromEnv()
 	...
 	id, err := client.CaptureMessage("some text")
 

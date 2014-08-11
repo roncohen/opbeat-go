@@ -187,6 +187,13 @@ func checkConfig(config *ClientConfig) error {
 	return nil
 }
 
+// NewClientFromEnv reads all configuration from the environement.
+// Variables are: OPBEAT_ORGANIZATION_ID, OPBEAT_APP_ID, OPBEAT_SECRET_TOKEN,
+// OPBEAT_HOST, OPBEAT_CONNECT_TIMEOUT, OPBEAT_READ_TIMEOUT
+func NewClientFromEnv() (client *Client, err error) {
+	return NewClient(nil)
+}
+
 // NewClient creates a new client. It will attempt to read missing parameters from the environment
 func NewClient(config *ClientConfig) (client *Client, err error) {
 	err = fillConfig(config)
