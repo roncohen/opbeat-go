@@ -84,7 +84,7 @@ func TestMiddleware(t *testing.T) {
 	client, _ := NewClient(&config)
 	var somethingInterfacy interface{} = "a string"
 
-	ts := httptest.NewServer(OpbeatHandler(client, http.HandlerFunc(
+	ts := httptest.NewServer(client.Handler(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			// A mistake
 			w.Write(somethingInterfacy.([]byte))

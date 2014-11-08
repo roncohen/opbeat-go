@@ -395,6 +395,10 @@ func (client Client) send(packet []byte) (eventLink string, err error) {
 	}
 }
 
+func (c *Client) Handler(h http.Handler) http.Handler {
+	return OpbeatHandler(c, h)
+}
+
 // Useful handler to catch panics further down the handler chain
 func OpbeatHandler(client *Client, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
