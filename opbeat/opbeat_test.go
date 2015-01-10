@@ -48,9 +48,9 @@ func TestNewClientSetsProperties(t *testing.T) {
 
 func SkipTestClientIntegrationAgainstOpbeatCom(t *testing.T) {
 	config := ClientConfig{
-		OrganizationId: "733513d2c0bf4d4ba783a33380e87960",
-		AppId:          "4093730eb9",
-		SecretToken:    "aeb10c7cb87f2ba40a26d1981ee3c3d0e585dcdf",
+		OrganizationId: "2fb217d7dc174736ba54eaa6bb001fb8",
+		AppId:          "47a72ab277",
+		SecretToken:    "4eb1179d66d0f52092fd11dc5c2f9156047ff6af",
 	}
 	req, _ := http.NewRequest("GET", "http://example.com", nil)
 
