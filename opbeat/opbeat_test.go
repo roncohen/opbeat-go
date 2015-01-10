@@ -13,6 +13,10 @@ import (
 	"testing"
 )
 
+const OpbeatOrganizationId = "2fb217d7dc174736ba54eaa6bb001fb8"
+const OpbeatAppId = "47a72ab277"
+const OpbeatSecretToken = "4eb1179d66d0f52092fd11dc5c2f9156047ff6af"
+
 func TestNewClientSetsProperties(t *testing.T) {
 	config := ClientConfig{
 		OrganizationId: "org_id",
@@ -48,9 +52,9 @@ func TestNewClientSetsProperties(t *testing.T) {
 
 func SkipTestClientIntegrationAgainstOpbeatCom(t *testing.T) {
 	config := ClientConfig{
-		OrganizationId: "2fb217d7dc174736ba54eaa6bb001fb8",
-		AppId:          "47a72ab277",
-		SecretToken:    "4eb1179d66d0f52092fd11dc5c2f9156047ff6af",
+		OrganizationId: OpbeatOrganizationId,
+		AppId:          OpbeatAppId,
+		SecretToken:    OpbeatSecretToken,
 	}
 	req, _ := http.NewRequest("GET", "http://example.com", nil)
 
@@ -76,9 +80,9 @@ func SkipTestClientIntegrationAgainstOpbeatCom(t *testing.T) {
 
 func TestMiddleware(t *testing.T) {
 	config := ClientConfig{
-		OrganizationId: "733513d2c0bf4d4ba783a33380e87960",
-		AppId:          "4093730eb9",
-		SecretToken:    "aeb10c7cb87f2ba40a26d1981ee3c3d0e585dcdf",
+		OrganizationId: "2fb217d7dc174736ba54eaa6bb001fb8",
+		AppId:          "47a72ab277",
+		SecretToken:    OpbeatSecretToken,
 		Logger:         log.New(os.Stderr, "OPBEAT: ", log.LstdFlags),
 	}
 	client, _ := NewClient(&config)
@@ -98,9 +102,9 @@ func TestMiddleware(t *testing.T) {
 }
 
 func testRequest(t *testing.T, test_call func(*testing.T, *Client), assertions func(map[string]interface{})) {
-	OrgId := "733513d2c0bf4d4ba783a33380e87960"
-	AppId := "4093730eb9"
-	SecretToken := "aeb10c7cb87f2ba40a26d1981ee3c3d0e585dcdf"
+	OrgId := OpbeatOrganizationId
+	AppId := OpbeatAppId
+	SecretToken := OpbeatSecretToken
 
 	expected_url := "/api/v1/organizations/" + OrgId
 	expected_url = expected_url + "/apps/" + AppId
