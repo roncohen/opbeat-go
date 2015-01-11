@@ -1,3 +1,48 @@
+// Experimental Opbeat client. Enables you to log errors and stacktraces from
+// within your Go applications, including plug-and-play support for
+// `http.Handler` middleware chains.
+//
+// Usage
+//
+// A default client is automatically created from environment when the package
+// is imported, but you can easily create your own client using the `New`
+// function.
+//
+// 	client := New(organizationId, appId, secretToken)
+// 	err := client.CaptureError(errors.New("Test Error"))
+// 	...
+//
+// Every client can call the `.CaptureX` functions for example `.CaptureError`
+// and `.CaptureMessage` and these are the main functions that are used to
+// communicate information to Opbeat.
+//
+// Importantly there is also a `.Handler` function on every client that allows
+// for painless error handling in any Go http application that uses the standard
+// form `http.Handler` functions.
+//
+// 	var interfacy interface{} = "interfacy"
+// 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		w.Write(interfacy.([]byte))
+// 	})
+// 	s := http.NewServer(opbeat.Handler(handler))
+//
+// The example above would automatically tell Opbeat that we tried to type
+// assert a string into a []byte and failed. You may have figured out that this
+// works by recovering from panics, that means that you may also panic any error
+// in your http application and it will be logged by the client.
+//
+// Environment
+//
+// The client supports the following environment variables.
+//
+// - OPBEAT_ORGANIZATION_ID
+// - OPBEAT_APP_ID
+// - OPBEAT_SECRET_TOKEN
+// - OPBEAT_HOST
+// - OPBEAT_REVISION
+// - OPBEAT_TIMEOUT
+//
+// They will all be automatically loaded into the default client.
 package opbeat
 
 import (
@@ -22,6 +67,7 @@ const (
 	defaultTimeout = 3 * time.Second
 )
 
+// Log levels supported by Opbeat.
 type Level string
 
 const (
@@ -43,6 +89,7 @@ type Opbeat struct {
 	*http.Client
 }
 
+// Creates a new client.
 func New(organizationId, appId, secretToken string) *Opbeat {
 	opbeat := new(Opbeat)
 	opbeat.Credentials(organizationId, appId, secretToken)
@@ -60,6 +107,7 @@ func New(organizationId, appId, secretToken string) *Opbeat {
 	return opbeat
 }
 
+// Creates a new client using environment settings.
 func NewFromEnvironment() *Opbeat {
 	opbeat := New(os.Getenv("OPBEAT_ORGANIZATION_ID"), os.Getenv("OPBEAT_APP_ID"),
 		os.Getenv("OPBEAT_SECRET_TOKEN"))
@@ -87,12 +135,16 @@ func NewFromEnvironment() *Opbeat {
 	return opbeat
 }
 
+// Configure Opbeat application credentials. These can be found when viewing
+// your application settings on the Opbeat website.
 func (opbeat *Opbeat) Credentials(organizationId, appId, secretToken string) {
 	opbeat.organizationId = organizationId
 	opbeat.appId = appId
 	opbeat.secretToken = secretToken
 }
 
+// HTTP middleware handler that automatically will log any paniced error to
+// Opbeat.
 func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -106,10 +158,14 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 	})
 }
 
+// Captures an error and sends the log to Opbeat.
 func (opbeat *Opbeat) CaptureError(err error) error {
 	return opbeat.CaptureErrorSkip(err, 1, nil)
 }
 
+// Captures an error along with a `*http.Request` and sends the log to Opbeat
+// enriched with information specific to that request. Useful when using Opbeat
+// in a http application.
 func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request) error {
 	headers := make(map[string]string)
 	for k, v := range r.Header {
@@ -134,6 +190,10 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request) error {
 	})
 }
 
+// Captures an error and skips `skip` amount of frames in the stacktrace, this
+// is useful to stop logging library type frames to Opbeat. Also takes a map of
+// other interfaces that are written to Opbeat as a part of the log. Please take
+// care that any values in this map can be marshalled into JSON.
 func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]interface{}) error {
 	stacktrace, err := stacko.NewStacktrace(3 + skip)
 	if err != nil {
@@ -158,6 +218,7 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]int
 	return nil
 }
 
+// Captures a message along with a level indicating the severity of the message.
 func (opbeat *Opbeat) CaptureMessage(message string, l Level) error {
 	p, err := newPacket(message, nil)
 	if err != nil {
@@ -171,10 +232,14 @@ func (opbeat *Opbeat) CaptureMessage(message string, l Level) error {
 	return nil
 }
 
+// Waits for all packets to send.
 func (opbeat *Opbeat) Wait() {
 	opbeat.wait.Wait()
 }
 
+// Starts a goroutine which listens on the main channel and sends any packets it
+// receives to Opbeat. The goroutine will exit if the client's `.Close` function
+// is called.
 func (opbeat *Opbeat) Start() {
 	opbeat.packets = make(chan *packet)
 	go func() {
@@ -184,7 +249,7 @@ func (opbeat *Opbeat) Start() {
 			select {
 			case p, open = <-opbeat.packets:
 				if !open {
-					break
+					return
 				}
 				err := opbeat.send(p)
 				if err != nil {
@@ -196,6 +261,8 @@ func (opbeat *Opbeat) Start() {
 	}()
 }
 
+// Waits for all requests to finish and closes the main channel. Closing the
+// channel will force the goroutines communicating packets to return.
 func (opbeat *Opbeat) Close() {
 	opbeat.Wait()
 	close(opbeat.packets)
@@ -253,6 +320,11 @@ func (opbeat *Opbeat) send(p *packet) error {
 	return nil
 }
 
+// The default client, created fresh from the environment on import. Can also be
+// used without the environment by manually configuring via the `.Credentials`
+// function and by setting fields directly on the `DefaultOpbeat` variable.
+// You may find function specific documentation on the corresponding functions
+// on the `*Opbeat` struct.
 var DefaultOpbeat = NewFromEnvironment()
 
 func Credentials(organizationId, appId, secretToken string) {
