@@ -102,7 +102,7 @@ func New(organizationId, appId, secretToken string) *Opbeat {
 	opbeat.LoggerName = "default"
 	opbeat.Logger = log.New(os.Stderr, "", log.LstdFlags)
 
-	opbeat.Start()
+	opbeat.start()
 
 	return opbeat
 }
@@ -240,8 +240,8 @@ func (opbeat *Opbeat) Wait() {
 // Starts a goroutine which listens on the main channel and sends any packets it
 // receives to Opbeat. The goroutine will exit if the client's `.Close` function
 // is called.
-func (opbeat *Opbeat) Start() {
-	opbeat.packets = make(chan *packet)
+func (opbeat *Opbeat) start() {
+	opbeat.packets = make(chan *packet, 20)
 	go func() {
 		var p *packet
 		var open bool
@@ -345,10 +345,6 @@ func CaptureMessage(message string, l Level) error {
 
 func Wait() {
 	DefaultOpbeat.Wait()
-}
-
-func Start() {
-	DefaultOpbeat.Start()
 }
 
 func Close() {

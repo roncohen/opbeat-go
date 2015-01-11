@@ -20,6 +20,7 @@ func TestSetup(t *testing.T) {
 
 func TestCaptureError(t *testing.T) {
 	defer Wait()
+
 	err := CaptureError(errors.New("Test Error"))
 	if err != nil {
 		t.Error(err)
@@ -28,6 +29,7 @@ func TestCaptureError(t *testing.T) {
 
 func TestHandler(t *testing.T) {
 	defer Wait()
+
 	var interfacy interface{} = "interfacy"
 	middleware := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write(interfacy.([]byte))
@@ -44,17 +46,8 @@ func TestHandler(t *testing.T) {
 
 func TestCaptureMessage(t *testing.T) {
 	defer Wait()
-	err := CaptureMessage("Test Message", Info)
-	if err != nil {
-		t.Error(err)
-	}
-}
 
-func TestClose(t *testing.T) {
-	defer Wait()
-	Close()
-	Start()
-	err := CaptureMessage("Starting", Info)
+	err := CaptureMessage("Test Message", Info)
 	if err != nil {
 		t.Error(err)
 	}
@@ -62,6 +55,7 @@ func TestClose(t *testing.T) {
 
 func TestRevision(t *testing.T) {
 	defer Wait()
+
 	rev, err := exec.Command("git", "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Error(err)
@@ -73,4 +67,8 @@ func TestRevision(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestClose(t *testing.T) {
+	Close()
 }
