@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"testing"
 )
 
@@ -43,7 +44,7 @@ func TestHandler(t *testing.T) {
 
 func TestCaptureMessage(t *testing.T) {
 	defer Wait()
-	err := CaptureMessage("Test Message", "info")
+	err := CaptureMessage("Test Message", Info)
 	if err != nil {
 		t.Error(err)
 	}
@@ -53,7 +54,22 @@ func TestClose(t *testing.T) {
 	defer Wait()
 	Close()
 	Start()
-	err := CaptureMessage("Starting", "info")
+	err := CaptureMessage("Starting", Info)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestRevision(t *testing.T) {
+	defer Wait()
+	rev, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Error(err)
+	}
+
+	DefaultOpbeat.Revision = string(rev[:])
+
+	err = CaptureError(errors.New("Capturing Revision"))
 	if err != nil {
 		t.Error(err)
 	}

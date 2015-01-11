@@ -37,6 +37,7 @@ type Opbeat struct {
 	wait                               sync.WaitGroup
 	organizationId, appId, secretToken string
 	Host                               string
+	Revision                           string
 	LoggerName                         string
 	*log.Logger
 	*http.Client
@@ -66,6 +67,11 @@ func NewFromEnvironment() *Opbeat {
 	host := os.Getenv("OPBEAT_HOST")
 	if len(host) > 0 {
 		opbeat.Host = host
+	}
+
+	rev := os.Getenv("OPBEAT_REVISION")
+	if len(rev) > 0 {
+		opbeat.Revision = rev
 	}
 
 	timeout := os.Getenv("OPBEAT_TIMEOUT")
@@ -139,6 +145,7 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]int
 		return err
 	}
 
+	p.Revision = opbeat.Revision
 	p.Level = Error
 	p.Logger = opbeat.LoggerName
 
@@ -280,6 +287,7 @@ type packet struct {
 	Id         string                 `json:"client_supplied_id"`
 	Culprit    string                 `json:"culprit"`
 	Timestamp  string                 `json:"timestamp"`
+	Revision   string                 `json:"rev"`
 	Message    string                 `json:"message"`
 	Level      Level                  `json:"level"`
 	Logger     string                 `json:"logger"`
