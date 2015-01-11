@@ -50,5 +50,11 @@ func TestCaptureMessage(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
+	defer Wait()
 	Close()
+	Start()
+	err := CaptureMessage("Starting", "info")
+	if err != nil {
+		t.Error(err)
+	}
 }

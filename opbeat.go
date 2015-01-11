@@ -42,21 +42,7 @@ func New(organizationId, appId, secretToken string) *Opbeat {
 	opbeat.LoggerName = "default"
 	opbeat.Logger = log.New(os.Stderr, "", log.LstdFlags)
 
-	opbeat.packets = make(chan *packet)
-
-	go func() {
-		var p *packet
-		for {
-			select {
-			case p = <-opbeat.packets:
-				err := opbeat.send(p)
-				if err != nil {
-					opbeat.Logger.Println(err)
-				}
-				opbeat.wait.Done()
-			}
-		}
-	}()
+	opbeat.Start()
 
 	return opbeat
 }
@@ -170,6 +156,27 @@ func (opbeat *Opbeat) Wait() {
 	opbeat.wait.Wait()
 }
 
+func (opbeat *Opbeat) Start() {
+	opbeat.packets = make(chan *packet)
+	go func() {
+		var p *packet
+		var open bool
+		for {
+			select {
+			case p, open = <-opbeat.packets:
+				if !open {
+					break
+				}
+				err := opbeat.send(p)
+				if err != nil {
+					opbeat.Logger.Println(err)
+				}
+				opbeat.wait.Done()
+			}
+		}
+	}()
+}
+
 func (opbeat *Opbeat) Close() {
 	opbeat.Wait()
 	close(opbeat.packets)
@@ -247,6 +254,10 @@ func CaptureMessage(message, level string) error {
 
 func Wait() {
 	DefaultOpbeat.Wait()
+}
+
+func Start() {
+	DefaultOpbeat.Start()
 }
 
 func Close() {
