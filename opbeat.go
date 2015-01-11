@@ -17,8 +17,20 @@ import (
 	"time"
 )
 
-const defaultHost = "opbeat.com"
-const defaultTimeout = 3 * time.Second
+const (
+	defaultHost    = "opbeat.com"
+	defaultTimeout = 3 * time.Second
+)
+
+type Level string
+
+const (
+	Debug   Level = "debug"
+	Info          = "info"
+	Warning       = "warning"
+	Error         = "error"
+	Fatal         = "fatal"
+)
 
 type Opbeat struct {
 	packets                            chan *packet
@@ -127,7 +139,7 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]int
 		return err
 	}
 
-	p.Level = "error"
+	p.Level = Error
 	p.Logger = opbeat.LoggerName
 
 	if http, ok := options["http"].(map[string]interface{}); ok {
@@ -139,13 +151,13 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]int
 	return nil
 }
 
-func (opbeat *Opbeat) CaptureMessage(message, level string) error {
+func (opbeat *Opbeat) CaptureMessage(message string, l Level) error {
 	p, err := newPacket(message, nil)
 	if err != nil {
 		return err
 	}
 
-	p.Level = level
+	p.Level = l
 
 	opbeat.queue(p)
 
@@ -248,8 +260,8 @@ func CaptureError(err error) error {
 	return DefaultOpbeat.CaptureError(err)
 }
 
-func CaptureMessage(message, level string) error {
-	return DefaultOpbeat.CaptureMessage(message, level)
+func CaptureMessage(message string, l Level) error {
+	return DefaultOpbeat.CaptureMessage(message, l)
 }
 
 func Wait() {
@@ -269,7 +281,7 @@ type packet struct {
 	Culprit    string                 `json:"culprit"`
 	Timestamp  string                 `json:"timestamp"`
 	Message    string                 `json:"message"`
-	Level      string                 `json:"level"`
+	Level      Level                  `json:"level"`
 	Logger     string                 `json:"logger"`
 	Exception  map[string]string      `json:"exception"`
 	Machine    map[string]string      `json:"machine"`
