@@ -21,7 +21,22 @@ func TestSetup(t *testing.T) {
 func TestCaptureError(t *testing.T) {
 	defer Wait()
 
-	err := CaptureError(errors.New("Test Error"))
+	err := CaptureError(errors.New("Test Error"), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCaptureErrorWithOptions(t *testing.T) {
+	defer Wait()
+
+	options := Options{
+		"extra": map[string]string{
+			"Custom": "Information",
+		},
+	}
+
+	err := CaptureError(errors.New("Test Error"), options)
 	if err != nil {
 		t.Error(err)
 	}
@@ -47,7 +62,7 @@ func TestHandler(t *testing.T) {
 func TestCaptureMessage(t *testing.T) {
 	defer Wait()
 
-	err := CaptureMessage("Test Message", Info)
+	err := CaptureMessage("Test Message", Info, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -63,7 +78,7 @@ func TestRevision(t *testing.T) {
 
 	DefaultOpbeat.Revision = string(rev[:])
 
-	err = CaptureError(errors.New("Capturing Revision"))
+	err = CaptureError(errors.New("Capturing Revision"), nil)
 	if err != nil {
 		t.Error(err)
 	}

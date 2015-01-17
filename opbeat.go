@@ -9,7 +9,7 @@
 // function.
 //
 // 	client := New(organizationId, appId, secretToken)
-// 	err := client.CaptureError(errors.New("Test Error"))
+// 	err := client.CaptureError(errors.New("Test Error"), nil)
 // 	...
 //
 // Every client can call the `.CaptureX` functions for example `.CaptureError`
@@ -77,6 +77,8 @@ const (
 	Error         = "error"
 	Fatal         = "fatal"
 )
+
+type Options map[string]interface{}
 
 type Opbeat struct {
 	packets                            chan *packet
@@ -150,7 +152,7 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				if err, ok := err.(error); ok {
-					opbeat.CaptureErrorWithRequest(err, r)
+					opbeat.CaptureErrorWithRequest(err, r, nil)
 				}
 			}
 		}()
@@ -159,14 +161,14 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 }
 
 // Captures an error and sends the log to Opbeat.
-func (opbeat *Opbeat) CaptureError(err error) error {
-	return opbeat.CaptureErrorSkip(err, 1, nil)
+func (opbeat *Opbeat) CaptureError(err error, options Options) error {
+	return opbeat.CaptureErrorSkip(err, 1, options)
 }
 
 // Captures an error along with a `*http.Request` and sends the log to Opbeat
 // enriched with information specific to that request. Useful when using Opbeat
 // in a http application.
-func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request) error {
+func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options Options) error {
 	headers := make(map[string]string)
 	for k, v := range r.Header {
 		headers[k] = v[len(v)-1]
@@ -185,22 +187,26 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request) error {
 		"headers": headers,
 	}
 
-	return opbeat.CaptureErrorSkip(e, 4, map[string]interface{}{
-		"http": http,
-	})
+	if options == nil {
+		options = make(Options)
+	}
+
+	options["http"] = http
+
+	return opbeat.CaptureErrorSkip(e, 4, options)
 }
 
 // Captures an error and skips `skip` amount of frames in the stacktrace, this
 // is useful to stop logging library type frames to Opbeat. Also takes a map of
 // other interfaces that are written to Opbeat as a part of the log. Please take
 // care that any values in this map can be marshalled into JSON.
-func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]interface{}) error {
+func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options Options) error {
 	stacktrace, err := stacko.NewStacktrace(3 + skip)
 	if err != nil {
 		return err
 	}
 
-	p, err := newPacket(e.Error(), stacktrace)
+	p, err := newPacket(e.Error(), stacktrace, options)
 	if err != nil {
 		return err
 	}
@@ -209,18 +215,14 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options map[string]int
 	p.Level = Error
 	p.Logger = opbeat.LoggerName
 
-	if http, ok := options["http"].(map[string]interface{}); ok {
-		p.HTTP = http
-	}
-
 	opbeat.queue(p)
 
 	return nil
 }
 
 // Captures a message along with a level indicating the severity of the message.
-func (opbeat *Opbeat) CaptureMessage(message string, l Level) error {
-	p, err := newPacket(message, nil)
+func (opbeat *Opbeat) CaptureMessage(message string, l Level, options Options) error {
+	p, err := newPacket(message, nil, options)
 	if err != nil {
 		return err
 	}
@@ -262,7 +264,9 @@ func (opbeat *Opbeat) start() {
 }
 
 // Waits for all requests to finish and closes the main channel. Closing the
-// channel will force the goroutines communicating packets to return.
+// channel will force the goroutines communicating packets to return. This
+// effectively kills the client and a new will have to be created to continue
+// communicating with Opbeat.
 func (opbeat *Opbeat) Close() {
 	opbeat.Wait()
 	close(opbeat.packets)
@@ -335,12 +339,16 @@ func Handler(h http.Handler) http.Handler {
 	return DefaultOpbeat.Handler(h)
 }
 
-func CaptureError(err error) error {
-	return DefaultOpbeat.CaptureError(err)
+func CaptureError(err error, options Options) error {
+	return DefaultOpbeat.CaptureError(err, options)
 }
 
-func CaptureMessage(message string, l Level) error {
-	return DefaultOpbeat.CaptureMessage(message, l)
+func CaptureErrorWithRequest(e error, r *http.Request, options Options) error {
+	return DefaultOpbeat.CaptureErrorWithRequest(e, r, options)
+}
+
+func CaptureMessage(message string, l Level, options Options) error {
+	return DefaultOpbeat.CaptureMessage(message, l, options)
 }
 
 func Wait() {
@@ -378,7 +386,7 @@ type frame struct {
 	Context      string   `json:"context_line"`
 }
 
-func newPacket(message string, stacktrace stacko.Stacktrace) (*packet, error) {
+func newPacket(message string, stacktrace stacko.Stacktrace, options Options) (*packet, error) {
 	id := make([]byte, 24)
 	rand.Read(id)
 
@@ -403,6 +411,16 @@ func newPacket(message string, stacktrace stacko.Stacktrace) (*packet, error) {
 		"OS":           runtime.GOOS,
 		"Processors":   runtime.NumCPU(),
 		"Goroutines":   runtime.NumGoroutine(),
+	}
+
+	if http, ok := options["http"].(map[string]interface{}); ok {
+		p.HTTP = http
+	}
+
+	if extra, ok := options["extra"].(map[string]string); ok {
+		for k, v := range extra {
+			p.Extra[k] = v
+		}
 	}
 
 	if stacktrace != nil {
