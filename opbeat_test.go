@@ -30,13 +30,29 @@ func TestCaptureError(t *testing.T) {
 func TestCaptureErrorWithOptions(t *testing.T) {
 	defer Wait()
 
-	options := Options{
-		"extra": map[string]string{
+	options := &Options{
+		Extra: &Extra{
 			"Custom": "Information",
 		},
 	}
 
-	err := CaptureError(errors.New("Test Error"), options)
+	err := CaptureError(errors.New("Test Error with Options"), options)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCaptureErrorWithUser(t *testing.T) {
+	options := &Options{
+		User: &User{
+			"Id",
+			"Email",
+			"Username",
+			true,
+		},
+	}
+
+	err := CaptureError(errors.New("Test Error with User"), options)
 	if err != nil {
 		t.Error(err)
 	}

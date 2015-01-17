@@ -78,7 +78,26 @@ const (
 	Fatal         = "fatal"
 )
 
-type Options map[string]interface{}
+type Options struct {
+	*Extra
+	*User
+	*HTTP
+}
+
+type Extra map[string]interface{}
+
+type User struct {
+	Id              string `json:"id"`
+	Email           string `json:"email"`
+	Username        string `json:"username"`
+	IsAuthenticated bool   `json:"is_authenticated"`
+}
+
+type HTTP struct {
+	URL     string            `json:"url"`
+	Method  string            `json:"method"`
+	Headers map[string]string `json:"headers"`
+}
 
 type Opbeat struct {
 	packets                            chan *packet
@@ -161,14 +180,14 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 }
 
 // Captures an error and sends the log to Opbeat.
-func (opbeat *Opbeat) CaptureError(err error, options Options) error {
+func (opbeat *Opbeat) CaptureError(err error, options *Options) error {
 	return opbeat.CaptureErrorSkip(err, 1, options)
 }
 
 // Captures an error along with a `*http.Request` and sends the log to Opbeat
 // enriched with information specific to that request. Useful when using Opbeat
 // in a http application.
-func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options Options) error {
+func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options *Options) error {
 	headers := make(map[string]string)
 	for k, v := range r.Header {
 		headers[k] = v[len(v)-1]
@@ -181,17 +200,17 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 		scheme = "http"
 	}
 
-	http := map[string]interface{}{
-		"url":     scheme + "://" + r.Host + r.URL.String(),
-		"method":  r.Method,
-		"headers": headers,
+	http := HTTP{
+		scheme + "://" + r.Host + r.URL.String(),
+		r.Method,
+		headers,
 	}
 
 	if options == nil {
-		options = make(Options)
+		options = new(Options)
 	}
 
-	options["http"] = http
+	options.HTTP = &http
 
 	return opbeat.CaptureErrorSkip(e, 4, options)
 }
@@ -200,7 +219,7 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 // is useful to stop logging library type frames to Opbeat. Also takes a map of
 // other interfaces that are written to Opbeat as a part of the log. Please take
 // care that any values in this map can be marshalled into JSON.
-func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options Options) error {
+func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) error {
 	stacktrace, err := stacko.NewStacktrace(3 + skip)
 	if err != nil {
 		return err
@@ -221,7 +240,7 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options Options) error
 }
 
 // Captures a message along with a level indicating the severity of the message.
-func (opbeat *Opbeat) CaptureMessage(message string, l Level, options Options) error {
+func (opbeat *Opbeat) CaptureMessage(message string, l Level, options *Options) error {
 	p, err := newPacket(message, nil, options)
 	if err != nil {
 		return err
@@ -339,15 +358,15 @@ func Handler(h http.Handler) http.Handler {
 	return DefaultOpbeat.Handler(h)
 }
 
-func CaptureError(err error, options Options) error {
+func CaptureError(err error, options *Options) error {
 	return DefaultOpbeat.CaptureError(err, options)
 }
 
-func CaptureErrorWithRequest(e error, r *http.Request, options Options) error {
+func CaptureErrorWithRequest(e error, r *http.Request, options *Options) error {
 	return DefaultOpbeat.CaptureErrorWithRequest(e, r, options)
 }
 
-func CaptureMessage(message string, l Level, options Options) error {
+func CaptureMessage(message string, l Level, options *Options) error {
 	return DefaultOpbeat.CaptureMessage(message, l, options)
 }
 
@@ -360,18 +379,19 @@ func Close() {
 }
 
 type packet struct {
-	Id         string                 `json:"client_supplied_id"`
-	Culprit    string                 `json:"culprit"`
-	Timestamp  string                 `json:"timestamp"`
-	Revision   string                 `json:"rev"`
-	Message    string                 `json:"message"`
-	Level      Level                  `json:"level"`
-	Logger     string                 `json:"logger"`
-	Exception  map[string]string      `json:"exception"`
-	Machine    map[string]string      `json:"machine"`
-	Extra      map[string]interface{} `json:"extra"`
-	Stacktrace map[string][]frame     `json:"stacktrace"`
-	HTTP       map[string]interface{} `json:"http"`
+	Id         string             `json:"client_supplied_id"`
+	Culprit    string             `json:"culprit"`
+	Timestamp  string             `json:"timestamp"`
+	Revision   string             `json:"rev"`
+	Message    string             `json:"message"`
+	Level      Level              `json:"level"`
+	Logger     string             `json:"logger"`
+	Exception  map[string]string  `json:"exception"`
+	Machine    map[string]string  `json:"machine"`
+	Stacktrace map[string][]frame `json:"stacktrace"`
+	Extra      *Extra             `json:"extra"`
+	HTTP       *HTTP              `json:"http"`
+	User       *User              `json:"user"`
 }
 
 type frame struct {
@@ -386,7 +406,7 @@ type frame struct {
 	Context      string   `json:"context_line"`
 }
 
-func newPacket(message string, stacktrace stacko.Stacktrace, options Options) (*packet, error) {
+func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (*packet, error) {
 	id := make([]byte, 24)
 	rand.Read(id)
 
@@ -404,7 +424,7 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options Options) (*
 		p.Machine["hostname"] = hostname
 	}
 
-	p.Extra = map[string]interface{}{
+	extra := Extra{
 		"Version":      runtime.Version(),
 		"Compiler":     runtime.Compiler,
 		"Architecture": runtime.GOARCH,
@@ -413,14 +433,17 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options Options) (*
 		"Goroutines":   runtime.NumGoroutine(),
 	}
 
-	if http, ok := options["http"].(map[string]interface{}); ok {
-		p.HTTP = http
-	}
+	if options != nil {
+		p.HTTP = options.HTTP
+		p.User = options.User
 
-	if extra, ok := options["extra"].(map[string]string); ok {
-		for k, v := range extra {
-			p.Extra[k] = v
+		if options.Extra != nil {
+			for k, v := range *options.Extra {
+				extra[k] = v
+			}
 		}
+
+		p.Extra = &extra
 	}
 
 	if stacktrace != nil {
