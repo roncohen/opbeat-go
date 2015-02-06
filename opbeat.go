@@ -1,6 +1,6 @@
-// Experimental Opbeat client. Enables you to log errors and stacktraces from
-// within your Go applications, including plug-and-play support for
-// `http.Handler` middleware chains.
+// Package opbeat is an experimental Opbeat client. Enables you to log errors
+// and stacktraces from within your Go applications, including plug-and-play
+// support for `http.Handler` middleware chains.
 //
 // Usage
 //
@@ -67,9 +67,11 @@ const (
 	defaultTimeout = 3 * time.Second
 )
 
-// Log levels supported by Opbeat.
+// Level is a type of string that represents an opbeat message level.
 type Level string
 
+// Use any of these constants as an indication of the severity level of an
+// opbeat message.
 const (
 	Debug   Level = "debug"
 	Info          = "info"
@@ -78,31 +80,43 @@ const (
 	Fatal         = "fatal"
 )
 
+// Options is a struct used to customise an opbeat message. Use it by setting
+// its pointers to structs with additional custom information.
 type Options struct {
 	*Extra
 	*User
 	*HTTP
 }
 
+// Extra is a map of custom string keys and interface{} values. This map will be
+// JSON serialized and sent to opbeat where you can view them along with the
+// other information pertaining to that message.
 type Extra map[string]interface{}
 
+// User is a struct of typical user information such as an id and an email. Use
+// this when logging an error in an environment where you have information on
+// the user active in the context of the error.
 type User struct {
-	Id              string `json:"id"`
+	ID              string `json:"id"`
 	Email           string `json:"email"`
 	Username        string `json:"username"`
 	IsAuthenticated bool   `json:"is_authenticated"`
 }
 
+// HTTP is a struct describing an HTTP request. Use this when in the context of
+// an HTTP request.
 type HTTP struct {
 	URL     string            `json:"url"`
 	Method  string            `json:"method"`
 	Headers map[string]string `json:"headers"`
 }
 
+// Opbeat is a struct used to communicate with Opbeat. Instantiate this directly
+// to create your own client, however we recommend using the `New` functions.
 type Opbeat struct {
 	packets                            chan *packet
 	wait                               sync.WaitGroup
-	organizationId, appId, secretToken string
+	organizationID, appID, secretToken string
 	Host                               string
 	Revision                           string
 	LoggerName                         string
@@ -110,10 +124,10 @@ type Opbeat struct {
 	*http.Client
 }
 
-// Creates a new client.
-func New(organizationId, appId, secretToken string) *Opbeat {
+// New creates a new Opbeat client with default settings.
+func New(organizationID, appID, secretToken string) *Opbeat {
 	opbeat := new(Opbeat)
-	opbeat.Credentials(organizationId, appId, secretToken)
+	opbeat.Credentials(organizationID, appID, secretToken)
 
 	opbeat.Host = defaultHost
 	opbeat.Client = &http.Client{
@@ -128,7 +142,7 @@ func New(organizationId, appId, secretToken string) *Opbeat {
 	return opbeat
 }
 
-// Creates a new client using environment settings.
+// NewFromEnvironment creates a new client using environment settings.
 func NewFromEnvironment() *Opbeat {
 	opbeat := New(os.Getenv("OPBEAT_ORGANIZATION_ID"), os.Getenv("OPBEAT_APP_ID"),
 		os.Getenv("OPBEAT_SECRET_TOKEN"))
@@ -156,16 +170,16 @@ func NewFromEnvironment() *Opbeat {
 	return opbeat
 }
 
-// Configure Opbeat application credentials. These can be found when viewing
-// your application settings on the Opbeat website.
-func (opbeat *Opbeat) Credentials(organizationId, appId, secretToken string) {
-	opbeat.organizationId = organizationId
-	opbeat.appId = appId
+// Credentials configures your Opbeat application credentials. These can be
+// found when viewing your application settings on the Opbeat website.
+func (opbeat *Opbeat) Credentials(organizationID, appID, secretToken string) {
+	opbeat.organizationID = organizationID
+	opbeat.appID = appID
 	opbeat.secretToken = secretToken
 }
 
-// HTTP middleware handler that automatically will log any paniced error to
-// Opbeat.
+// Handler is an HTTP middleware handler that automatically will log any paniced
+// error to Opbeat.
 func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -179,14 +193,14 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 	})
 }
 
-// Captures an error and sends the log to Opbeat.
+// CaptureError captures an error and sends the log to Opbeat.
 func (opbeat *Opbeat) CaptureError(err error, options *Options) error {
 	return opbeat.CaptureErrorSkip(err, 1, options)
 }
 
-// Captures an error along with a `*http.Request` and sends the log to Opbeat
-// enriched with information specific to that request. Useful when using Opbeat
-// in a http application.
+// CaptureErrorWithRequest captures an error along with a `*http.Request` and
+// sends the log to Opbeat enriched with information specific to that request.
+// Useful when using Opbeat in a http application.
 func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options *Options) error {
 	headers := make(map[string]string)
 	for k, v := range r.Header {
@@ -215,10 +229,11 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 	return opbeat.CaptureErrorSkip(e, 4, options)
 }
 
-// Captures an error and skips `skip` amount of frames in the stacktrace, this
-// is useful to stop logging library type frames to Opbeat. Also takes a map of
-// other interfaces that are written to Opbeat as a part of the log. Please take
-// care that any values in this map can be marshalled into JSON.
+// CaptureErrorSkip captures an error and skips `skip` amount of frames in the
+// stacktrace, this is useful to stop logging library type frames to Opbeat.
+// Also takes a map of other interfaces that are written to Opbeat as a part of
+// the log. Please take care that any values in this map can be marshalled into
+// JSON.
 func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) error {
 	stacktrace, err := stacko.NewStacktrace(3 + skip)
 	if err != nil {
@@ -239,7 +254,8 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) erro
 	return nil
 }
 
-// Captures a message along with a level indicating the severity of the message.
+// CaptureMessage captures a message along with a level indicating the severity
+// of the message.
 func (opbeat *Opbeat) CaptureMessage(message string, l Level, options *Options) error {
 	p, err := newPacket(message, nil, options)
 	if err != nil {
@@ -253,7 +269,7 @@ func (opbeat *Opbeat) CaptureMessage(message string, l Level, options *Options) 
 	return nil
 }
 
-// Waits for all packets to send.
+// Wait waits for all packets to send.
 func (opbeat *Opbeat) Wait() {
 	opbeat.wait.Wait()
 }
@@ -282,8 +298,8 @@ func (opbeat *Opbeat) start() {
 	}()
 }
 
-// Waits for all requests to finish and closes the main channel. Closing the
-// channel will force the goroutines communicating packets to return. This
+// Close waits for all requests to finish and closes the main channel. Closing
+// the channel will force the goroutines communicating packets to return. This
 // effectively kills the client and a new will have to be created to continue
 // communicating with Opbeat.
 func (opbeat *Opbeat) Close() {
@@ -303,7 +319,7 @@ func (opbeat *Opbeat) send(p *packet) error {
 	}
 
 	url := fmt.Sprintf("https://%s/api/v1/organizations/%s/apps/%s/errors/",
-		opbeat.Host, opbeat.organizationId, opbeat.appId)
+		opbeat.Host, opbeat.organizationID, opbeat.appID)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
@@ -345,41 +361,48 @@ func (opbeat *Opbeat) send(p *packet) error {
 
 // The default client, created fresh from the environment on import. Can also be
 // used without the environment by manually configuring via the `.Credentials`
-// function and by setting fields directly on the `DefaultOpbeat` variable.
+// function and by setting fields directly on the `DefaultClient` variable.
 // You may find function specific documentation on the corresponding functions
 // on the `*Opbeat` struct.
-var DefaultOpbeat = NewFromEnvironment()
+var DefaultClient = NewFromEnvironment()
 
-func Credentials(organizationId, appId, secretToken string) {
-	DefaultOpbeat.Credentials(organizationId, appId, secretToken)
+// Credentials wraps the default client.
+func Credentials(organizationID, appID, secretToken string) {
+	DefaultClient.Credentials(organizationID, appID, secretToken)
 }
 
+// Handler wraps the default client.
 func Handler(h http.Handler) http.Handler {
-	return DefaultOpbeat.Handler(h)
+	return DefaultClient.Handler(h)
 }
 
+// CaptureError wraps the default client.
 func CaptureError(err error, options *Options) error {
-	return DefaultOpbeat.CaptureError(err, options)
+	return DefaultClient.CaptureError(err, options)
 }
 
+// CaptureErrorWithRequest wraps the default client.
 func CaptureErrorWithRequest(e error, r *http.Request, options *Options) error {
-	return DefaultOpbeat.CaptureErrorWithRequest(e, r, options)
+	return DefaultClient.CaptureErrorWithRequest(e, r, options)
 }
 
+// CaptureMessage wraps the default client.
 func CaptureMessage(message string, l Level, options *Options) error {
-	return DefaultOpbeat.CaptureMessage(message, l, options)
+	return DefaultClient.CaptureMessage(message, l, options)
 }
 
+// Wait wraps the default client.
 func Wait() {
-	DefaultOpbeat.Wait()
+	DefaultClient.Wait()
 }
 
+// Close wraps the default client.
 func Close() {
-	DefaultOpbeat.Close()
+	DefaultClient.Close()
 }
 
 type packet struct {
-	Id         string             `json:"client_supplied_id"`
+	ID         string             `json:"client_supplied_id"`
 	Culprit    string             `json:"culprit"`
 	Timestamp  string             `json:"timestamp"`
 	Revision   string             `json:"rev"`
@@ -412,7 +435,7 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 
 	p := new(packet)
 	p.Message = message
-	p.Id = base64.URLEncoding.EncodeToString(id)
+	p.ID = base64.URLEncoding.EncodeToString(id)
 
 	p.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	p.Machine = map[string]string{

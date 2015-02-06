@@ -9,13 +9,13 @@ import (
 )
 
 const (
-	OpbeatOrganizationId = "2fb217d7dc174736ba54eaa6bb001fb8"
-	OpbeatAppId          = "47a72ab277"
+	OpbeatOrganizationID = "2fb217d7dc174736ba54eaa6bb001fb8"
+	OpbeatAppID          = "47a72ab277"
 	OpbeatSecretToken    = "4eb1179d66d0f52092fd11dc5c2f9156047ff6af"
 )
 
 func TestSetup(t *testing.T) {
-	Credentials(OpbeatOrganizationId, OpbeatAppId, OpbeatSecretToken)
+	Credentials(OpbeatOrganizationID, OpbeatAppID, OpbeatSecretToken)
 }
 
 func TestCaptureError(t *testing.T) {
@@ -92,7 +92,7 @@ func TestRevision(t *testing.T) {
 		t.Error(err)
 	}
 
-	DefaultOpbeat.Revision = string(rev[:])
+	DefaultClient.Revision = string(rev[:])
 
 	err = CaptureError(errors.New("Capturing Revision"), nil)
 	if err != nil {
