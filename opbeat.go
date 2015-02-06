@@ -318,12 +318,12 @@ func (opbeat *Opbeat) send(p *packet) error {
 		return err
 	}
 
+	defer res.Body.Close()
+
 	body, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		return err
 	}
-
-	res.Body.Close()
 
 	switch res.StatusCode {
 	case 202:
