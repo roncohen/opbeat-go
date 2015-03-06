@@ -124,7 +124,7 @@ func fillConfig(config *ClientConfig) error {
 	}
 
 	if len(config.AppId) == 0 {
-		config.OrganizationId = os.Getenv("OPBEAT_APP_ID")
+		config.AppId = os.Getenv("OPBEAT_APP_ID")
 	}
 
 	if len(config.SecretToken) == 0 {
@@ -196,6 +196,9 @@ func NewClientFromEnv() (client *Client, err error) {
 
 // NewClient creates a new client. It will attempt to read missing parameters from the environment
 func NewClient(config *ClientConfig) (client *Client, err error) {
+	if config == nil {
+		config = new(ClientConfig)
+	}
 	err = fillConfig(config)
 	if err != nil {
 		return nil, err
