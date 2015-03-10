@@ -12,13 +12,13 @@
 // 	err := client.CaptureError(errors.New("Test Error"), nil)
 // 	...
 //
-// Every client can call the `.CaptureX` functions for example `.CaptureError`
-// and `.CaptureMessage` and these are the main functions that are used to
+// Every client can call the `client.CaptureX` functions for example `client.CaptureError`
+// and `client.CaptureMessage` and these are the main functions that are used to
 // communicate information to Opbeat.
 //
-// Importantly there is also a `.Handler` function on every client that allows
-// for painless error handling in any Go http application that uses the standard
-// form `http.Handler` functions.
+// Importantly there is also a `client.Handler` function that allows for painless error
+// handling in any Go http application that uses the standard form `http.Handler`
+// functions.
 //
 // 	var interfacy interface{} = "interfacy"
 // 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,20 +27,21 @@
 // 	s := http.NewServer(opbeat.Handler(handler))
 //
 // The example above would automatically tell Opbeat that we tried to type
-// assert a string into a []byte and failed. You may have figured out that this
-// works by recovering from panics, that means that you may also panic any error
-// in your http application and it will be logged by the client.
+// assert a string into a []byte and failed. This works by recovering from panics,
+// that means that you may also panic any error in your http application and it
+// will be logged by the client.
+// 
 //
 // Environment
 //
 // The client supports the following environment variables.
 //
-// - OPBEAT_ORGANIZATION_ID
-// - OPBEAT_APP_ID
-// - OPBEAT_SECRET_TOKEN
-// - OPBEAT_HOST
-// - OPBEAT_REVISION
-// - OPBEAT_TIMEOUT
+// 	OPBEAT_ORGANIZATION_ID
+// 	OPBEAT_APP_ID
+// 	OPBEAT_SECRET_TOKEN
+// 	OPBEAT_HOST
+// 	OPBEAT_REVISION
+// 	OPBEAT_TIMEOUT
 //
 // They will all be automatically loaded into the default client.
 package opbeat
