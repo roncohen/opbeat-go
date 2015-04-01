@@ -2,8 +2,10 @@ package opbeat
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"testing"
 )
@@ -95,6 +97,35 @@ func TestRevision(t *testing.T) {
 	DefaultClient.Revision = string(rev[:])
 
 	err = CaptureError(errors.New("Capturing Revision"), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestNewWithLogger(t *testing.T) {
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+
+	opbeat := NewWithLogger("organizationID", "appID", "secretToken", logger)
+
+	if opbeat.Logger != logger {
+		t.Error("Logger should be set by when calling NewWithLogger")
+	}
+}
+
+func TestLoggerIsSetByDefault(t *testing.T) {
+	opbeat := New("organizationID", "appID", "secretToken")
+
+	if opbeat.Logger == nil {
+		t.Error("Logger should be set by default")
+	}
+}
+
+func TestCaptureMessageWithNilLogger(t *testing.T) {
+	defer Wait()
+
+	opbeat := NewWithLogger("organizationID", "appID", "secretToken", nil)
+
+	err := opbeat.CaptureMessage("Test Message", Info, nil)
 	if err != nil {
 		t.Error(err)
 	}
