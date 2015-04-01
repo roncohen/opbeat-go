@@ -159,7 +159,7 @@ func NewFromEnvironment() *Opbeat {
 	return opbeat
 }
 
-// New creates a new Opbeat client with a logger of your choice
+// NewWithLogger creates a new Opbeat client with a logger of your choice
 func NewWithLogger(organizationID, appID, secretToken string, logger StdLogger) *Opbeat {
 	opbeat := new(Opbeat)
 	opbeat.Credentials(organizationID, appID, secretToken)
