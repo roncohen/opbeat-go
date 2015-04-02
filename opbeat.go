@@ -30,7 +30,7 @@
 // assert a string into a []byte and failed. This works by recovering from panics,
 // that means that you may also panic any error in your http application and it
 // will be logged by the client.
-// 
+//
 //
 // Environment
 //
@@ -488,7 +488,9 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 func prepareStacktrace(stacktrace stacko.Stacktrace) []frame {
 	frames := make([]frame, len(stacktrace))
 	for i, f := range stacktrace {
-		frames[i] = frame{
+		// Opbeat expects the stack trace in deepest last,
+		// or top of the stack last if you will.
+		frames[len(stacktrace)-i-1] = frame{
 			f.FileName,
 			f.FunctionName,
 			f.PackageName,
