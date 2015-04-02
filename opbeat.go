@@ -52,7 +52,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/hallas/stacko"
+	"github.com/roncohen/stacko"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -194,11 +194,6 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 	})
 }
 
-// CaptureError captures an error and sends the log to Opbeat.
-func (opbeat *Opbeat) CaptureError(err error, options *Options) error {
-	return opbeat.CaptureErrorSkip(err, 1, options)
-}
-
 // CaptureErrorWithRequest captures an error along with a `*http.Request` and
 // sends the log to Opbeat enriched with information specific to that request.
 // Useful when using Opbeat in a http application.
@@ -227,16 +222,31 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 
 	options.HTTP = &http
 
-	return opbeat.CaptureErrorSkip(e, 4, options)
+	return opbeat.CaptureError(e, options)
 }
 
-// CaptureErrorSkip captures an error and skips `skip` amount of frames in the
-// stacktrace, this is useful to stop logging library type frames to Opbeat.
+func (opbeat *Opbeat) getStacktrace() (stacko.Stacktrace, error) {
+	stacktrace, err := stacko.NewStacktrace(3)
+	if err != nil {
+		return nil, err
+	}
+
+	// Skip the frames from this library
+	for i := 0; i < len(stacktrace); i++ {
+		if stacktrace[i].PackageName != "opbeat-go" {
+			return stacktrace[i:], nil
+		}
+	}
+
+	return stacktrace, nil
+}
+
+// CaptureError captures an error.
 // Also takes a map of other interfaces that are written to Opbeat as a part of
 // the log. Please take care that any values in this map can be marshalled into
 // JSON.
-func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) error {
-	stacktrace, err := stacko.NewStacktrace(3 + skip)
+func (opbeat *Opbeat) CaptureError(e error, options *Options) error {
+	stacktrace, err := opbeat.getStacktrace()
 	if err != nil {
 		return err
 	}
