@@ -252,7 +252,7 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 // the log. Please take care that any values in this map can be marshalled into
 // JSON.
 func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) error {
-	if err := opbeat.checkConfigured(); err != nil {
+	if err := opbeat.isConfigured(); err != nil {
 		return err
 	}
 
@@ -289,7 +289,7 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) erro
 // CaptureMessage captures a message along with a level indicating the severity
 // of the message.
 func (opbeat *Opbeat) CaptureMessage(message string, l Level, options *Options) error {
-	if err := opbeat.checkConfigured(); err != nil {
+	if err := opbeat.isConfigured(); err != nil {
 		return err
 	}
 
@@ -343,7 +343,7 @@ func (opbeat *Opbeat) Close() {
 	close(opbeat.packets)
 }
 
-func (opbeat *Opbeat) checkConfigured() error {
+func (opbeat *Opbeat) isConfigured() error {
 	if opbeat.organizationID == "" || opbeat.appID == "" || opbeat.secretToken == "" {
 		if opbeat.logger != nil {
 			opbeat.logger.Println("Opbeat disabled due to missing credentials")
