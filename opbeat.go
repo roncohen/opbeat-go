@@ -57,6 +57,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"sync"
@@ -87,6 +88,7 @@ type Options struct {
 	*Extra
 	*User
 	*HTTP
+	*Exception
 }
 
 // Extra is a map of custom string keys and interface{} values. This map will be
@@ -110,6 +112,13 @@ type HTTP struct {
 	URL     string            `json:"url"`
 	Method  string            `json:"method"`
 	Headers map[string]string `json:"headers"`
+}
+
+// Exception is a struct with information about an error that occured
+type Exception struct {
+	Type   string `json:"type"`
+	Value  string `json:"value"`
+	Module string `json:"module"`
 }
 
 // Opbeat is a struct used to communicate with Opbeat. Instantiate this directly
@@ -239,6 +248,17 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) erro
 	stacktrace, err := stacko.NewStacktrace(3 + skip)
 	if err != nil {
 		return err
+	}
+
+	if options == nil {
+		options = new(Options)
+	}
+	if options.Exception == nil {
+		options.Exception = &Exception{
+			reflect.TypeOf(e).String(),
+			e.Error(),
+			"",
+		}
 	}
 
 	p, err := newPacket(e.Error(), stacktrace, options)
@@ -410,12 +430,12 @@ type packet struct {
 	Message    string             `json:"message"`
 	Level      Level              `json:"level"`
 	Logger     string             `json:"logger"`
-	Exception  map[string]string  `json:"exception"`
 	Machine    map[string]string  `json:"machine"`
 	Stacktrace map[string][]frame `json:"stacktrace"`
 	Extra      *Extra             `json:"extra"`
 	HTTP       *HTTP              `json:"http"`
 	User       *User              `json:"user"`
+	Exception  *Exception         `json:"exception"`
 }
 
 type frame struct {
@@ -460,6 +480,7 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 	if options != nil {
 		p.HTTP = options.HTTP
 		p.User = options.User
+		p.Exception = options.Exception
 
 		if options.Extra != nil {
 			for k, v := range *options.Extra {
@@ -475,11 +496,6 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 
 		origin := stacktrace[0]
 		p.Culprit = origin.FunctionName
-		p.Exception = map[string]string{
-			"type":   "Error",
-			"value":  message,
-			"module": origin.PackageName,
-		}
 	}
 
 	return p, nil
