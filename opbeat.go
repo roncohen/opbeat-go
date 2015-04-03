@@ -127,29 +127,17 @@ type Opbeat struct {
 	packets                            chan *packet
 	wait                               sync.WaitGroup
 	organizationID, appID, secretToken string
+	logger                             StdLogger
 	Host                               string
 	Revision                           string
 	LoggerName                         string
-	*log.Logger
 	*http.Client
 }
 
 // New creates a new Opbeat client with default settings.
 func New(organizationID, appID, secretToken string) *Opbeat {
-	opbeat := new(Opbeat)
-	opbeat.Credentials(organizationID, appID, secretToken)
-
-	opbeat.Host = defaultHost
-	opbeat.Client = &http.Client{
-		Timeout: defaultTimeout,
-	}
-
-	opbeat.LoggerName = "default"
-	opbeat.Logger = log.New(os.Stderr, "", log.LstdFlags)
-
-	opbeat.start()
-
-	return opbeat
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+	return NewWithLogger(organizationID, appID, secretToken, logger)
 }
 
 // NewFromEnvironment creates a new client using environment settings.
@@ -170,12 +158,30 @@ func NewFromEnvironment() *Opbeat {
 	timeout := os.Getenv("OPBEAT_TIMEOUT")
 	if len(timeout) > 0 {
 		timeoutSec, err := strconv.Atoi(timeout)
-		if err != nil {
-			opbeat.Logger.Print(err)
+		if err != nil && opbeat.logger != nil {
+			opbeat.logger.Print(err)
 		} else {
 			opbeat.Client.Timeout = time.Duration(timeoutSec) * time.Second
 		}
 	}
+
+	return opbeat
+}
+
+// NewWithLogger creates a new Opbeat client with a logger of your choice.
+func NewWithLogger(organizationID, appID, secretToken string, logger StdLogger) *Opbeat {
+	opbeat := new(Opbeat)
+	opbeat.Credentials(organizationID, appID, secretToken)
+
+	opbeat.Host = defaultHost
+	opbeat.Client = &http.Client{
+		Timeout: defaultTimeout,
+	}
+
+	opbeat.LoggerName = "default"
+	opbeat.logger = logger
+
+	opbeat.start()
 
 	return opbeat
 }
@@ -310,8 +316,8 @@ func (opbeat *Opbeat) start() {
 					return
 				}
 				err := opbeat.send(p)
-				if err != nil {
-					opbeat.Logger.Println(err)
+				if err != nil && opbeat.logger != nil {
+					opbeat.logger.Println(err)
 				}
 				opbeat.wait.Done()
 			}
@@ -364,8 +370,8 @@ func (opbeat *Opbeat) send(p *packet) error {
 
 	switch res.StatusCode {
 	case 202:
-		if res.Header["Location"] != nil {
-			opbeat.Logger.Printf("Event details at %s", res.Header["Location"][0])
+		if res.Header["Location"] != nil && opbeat.logger != nil {
+			opbeat.logger.Printf("Event details at %s", res.Header["Location"][0])
 		}
 		return nil
 	default:
@@ -420,6 +426,21 @@ func Wait() {
 // Close wraps the default client.
 func Close() {
 	DefaultClient.Close()
+}
+
+// Logger interface that works both with the stdlib Logger and Sirupsens LogRus
+type StdLogger interface {
+	Print(...interface{})
+	Printf(string, ...interface{})
+	Println(...interface{})
+
+	Fatal(...interface{})
+	Fatalf(string, ...interface{})
+	Fatalln(...interface{})
+
+	Panic(...interface{})
+	Panicf(string, ...interface{})
+	Panicln(...interface{})
 }
 
 type packet struct {
