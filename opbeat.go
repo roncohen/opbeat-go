@@ -345,7 +345,10 @@ func (opbeat *Opbeat) Close() {
 
 func (opbeat *Opbeat) checkConfigured() error {
 	if opbeat.organizationID == "" || opbeat.appID == "" || opbeat.secretToken == "" {
-		opbeat.Logger.Println("Opbeat disabled due to missing credentials")
+		if opbeat.logger != nil {
+			opbeat.logger.Println("Opbeat disabled due to missing credentials")
+		}
+
 		return errors.New("Opbeat disabled due to missing credentials")
 	}
 	return nil
