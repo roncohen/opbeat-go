@@ -107,7 +107,7 @@ func TestNewWithLogger(t *testing.T) {
 
 	opbeat := NewWithLogger("organizationID", "appID", "secretToken", logger)
 
-	if opbeat.Logger != logger {
+	if opbeat.logger != logger {
 		t.Error("Logger should be set by when calling NewWithLogger")
 	}
 }
@@ -115,7 +115,7 @@ func TestNewWithLogger(t *testing.T) {
 func TestLoggerIsSetByDefault(t *testing.T) {
 	opbeat := New("organizationID", "appID", "secretToken")
 
-	if opbeat.Logger == nil {
+	if opbeat.logger == nil {
 		t.Error("Logger should be set by default")
 	}
 }

@@ -118,10 +118,10 @@ type Opbeat struct {
 	packets                            chan *packet
 	wait                               sync.WaitGroup
 	organizationID, appID, secretToken string
+	logger                             StdLogger
 	Host                               string
 	Revision                           string
 	LoggerName                         string
-	Logger                             StdLogger
 	*http.Client
 }
 
@@ -149,8 +149,8 @@ func NewFromEnvironment() *Opbeat {
 	timeout := os.Getenv("OPBEAT_TIMEOUT")
 	if len(timeout) > 0 {
 		timeoutSec, err := strconv.Atoi(timeout)
-		if err != nil && opbeat.Logger != nil {
-			opbeat.Logger.Print(err)
+		if err != nil && opbeat.logger != nil {
+			opbeat.logger.Print(err)
 		} else {
 			opbeat.Client.Timeout = time.Duration(timeoutSec) * time.Second
 		}
@@ -159,7 +159,7 @@ func NewFromEnvironment() *Opbeat {
 	return opbeat
 }
 
-// NewWithLogger creates a new Opbeat client with a logger of your choice
+// NewWithLogger creates a new Opbeat client with a logger of your choice.
 func NewWithLogger(organizationID, appID, secretToken string, logger StdLogger) *Opbeat {
 	opbeat := new(Opbeat)
 	opbeat.Credentials(organizationID, appID, secretToken)
@@ -170,7 +170,7 @@ func NewWithLogger(organizationID, appID, secretToken string, logger StdLogger) 
 	}
 
 	opbeat.LoggerName = "default"
-	opbeat.Logger = logger
+	opbeat.logger = logger
 
 	opbeat.start()
 
@@ -296,8 +296,8 @@ func (opbeat *Opbeat) start() {
 					return
 				}
 				err := opbeat.send(p)
-				if err != nil && opbeat.Logger != nil {
-					opbeat.Logger.Println(err)
+				if err != nil && opbeat.logger != nil {
+					opbeat.logger.Println(err)
 				}
 				opbeat.wait.Done()
 			}
@@ -350,8 +350,8 @@ func (opbeat *Opbeat) send(p *packet) error {
 
 	switch res.StatusCode {
 	case 202:
-		if res.Header["Location"] != nil && opbeat.Logger != nil {
-			opbeat.Logger.Printf("Event details at %s", res.Header["Location"][0])
+		if res.Header["Location"] != nil && opbeat.logger != nil {
+			opbeat.logger.Printf("Event details at %s", res.Header["Location"][0])
 		}
 		return nil
 	default:
