@@ -51,6 +51,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/hallas/stacko"
 	"io/ioutil"
@@ -251,6 +252,10 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 // the log. Please take care that any values in this map can be marshalled into
 // JSON.
 func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) error {
+	if err := opbeat.isConfigured(); err != nil {
+		return err
+	}
+
 	stacktrace, err := stacko.NewStacktrace(3 + skip)
 	if err != nil {
 		return err
@@ -284,6 +289,10 @@ func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) erro
 // CaptureMessage captures a message along with a level indicating the severity
 // of the message.
 func (opbeat *Opbeat) CaptureMessage(message string, l Level, options *Options) error {
+	if err := opbeat.isConfigured(); err != nil {
+		return err
+	}
+
 	p, err := newPacket(message, nil, options)
 	if err != nil {
 		return err
@@ -332,6 +341,17 @@ func (opbeat *Opbeat) start() {
 func (opbeat *Opbeat) Close() {
 	opbeat.Wait()
 	close(opbeat.packets)
+}
+
+func (opbeat *Opbeat) isConfigured() error {
+	if opbeat.organizationID == "" || opbeat.appID == "" || opbeat.secretToken == "" {
+		if opbeat.logger != nil {
+			opbeat.logger.Println("Opbeat disabled due to missing credentials")
+		}
+
+		return errors.New("Opbeat disabled due to missing credentials")
+	}
+	return nil
 }
 
 func (opbeat *Opbeat) queue(p *packet) {
