@@ -118,6 +118,7 @@ type Opbeat struct {
 	packets                            chan *packet
 	wait                               sync.WaitGroup
 	organizationID, appID, secretToken string
+	thisPackage                        string
 	Host                               string
 	Revision                           string
 	LoggerName                         string
@@ -137,6 +138,12 @@ func New(organizationID, appID, secretToken string) *Opbeat {
 
 	opbeat.LoggerName = "default"
 	opbeat.Logger = log.New(os.Stderr, "", log.LstdFlags)
+
+	// Get the current package name to be used in skipping frames later
+	pc, _, _, _ := runtime.Caller(0)
+	pkgName, _ := stacko.FunctionInfo(pc)
+
+	opbeat.thisPackage = pkgName
 
 	opbeat.start()
 
@@ -233,7 +240,7 @@ func (opbeat *Opbeat) getStacktrace() (stacko.Stacktrace, error) {
 
 	// Skip the frames from this library
 	for i := 0; i < len(stacktrace); i++ {
-		if stacktrace[i].PackageName != "opbeat-go" {
+		if stacktrace[i].PackageName != opbeat.thisPackage {
 			return stacktrace[i:], nil
 		}
 	}
