@@ -50,12 +50,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/hallas/stacko"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"sync"
@@ -86,6 +88,7 @@ type Options struct {
 	*Extra
 	*User
 	*HTTP
+	*Exception
 }
 
 // Extra is a map of custom string keys and interface{} values. This map will be
@@ -111,6 +114,13 @@ type HTTP struct {
 	Headers map[string]string `json:"headers"`
 }
 
+// Exception is a struct with information about an error that occured
+type Exception struct {
+	Type   string `json:"type"`
+	Value  string `json:"value"`
+	Module string `json:"module"`
+}
+
 // Opbeat is a struct used to communicate with Opbeat. Instantiate this directly
 // to create your own client, however we recommend using the `New` functions.
 type Opbeat struct {
@@ -118,35 +128,18 @@ type Opbeat struct {
 	wait                               sync.WaitGroup
 	organizationID, appID, secretToken string
 	thisPackage                        string
+	logger                             StdLogger
 	Host                               string
 	Revision                           string
 	LoggerName                         string
 
-	*log.Logger
 	*http.Client
 }
 
 // New creates a new Opbeat client with default settings.
 func New(organizationID, appID, secretToken string) *Opbeat {
-	opbeat := new(Opbeat)
-	opbeat.Credentials(organizationID, appID, secretToken)
-
-	opbeat.Host = defaultHost
-	opbeat.Client = &http.Client{
-		Timeout: defaultTimeout,
-	}
-
-	opbeat.LoggerName = "default"
-	opbeat.Logger = log.New(os.Stderr, "", log.LstdFlags)
-
-	// Get the current package name to be used in skipping frames later.
-	pc, _, _, _ := runtime.Caller(0)
-	pkgName, _ := stacko.FunctionInfo(pc)
-	opbeat.thisPackage = pkgName
-
-	opbeat.start()
-
-	return opbeat
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+	return NewWithLogger(organizationID, appID, secretToken, logger)
 }
 
 // NewFromEnvironment creates a new client using environment settings.
@@ -167,12 +160,35 @@ func NewFromEnvironment() *Opbeat {
 	timeout := os.Getenv("OPBEAT_TIMEOUT")
 	if len(timeout) > 0 {
 		timeoutSec, err := strconv.Atoi(timeout)
-		if err != nil {
-			opbeat.Logger.Print(err)
+		if err != nil && opbeat.logger != nil {
+			opbeat.logger.Print(err)
 		} else {
 			opbeat.Client.Timeout = time.Duration(timeoutSec) * time.Second
 		}
 	}
+
+	return opbeat
+}
+
+// NewWithLogger creates a new Opbeat client with a logger of your choice.
+func NewWithLogger(organizationID, appID, secretToken string, logger StdLogger) *Opbeat {
+	opbeat := new(Opbeat)
+	opbeat.Credentials(organizationID, appID, secretToken)
+
+	opbeat.Host = defaultHost
+	opbeat.Client = &http.Client{
+		Timeout: defaultTimeout,
+	}
+
+	opbeat.LoggerName = "default"
+	opbeat.logger = logger
+
+	// Get the current package name to be used in skipping frames later.
+	pc, _, _, _ := runtime.Caller(0)
+	pkgName, _ := stacko.FunctionInfo(pc)
+	opbeat.thisPackage = pkgName
+
+	opbeat.start()
 
 	return opbeat
 }
@@ -247,14 +263,25 @@ func (opbeat *Opbeat) getStacktrace() (stacko.Stacktrace, error) {
 	return stacktrace, nil
 }
 
-// CaptureError captures an error.
-// Also takes a map of other interfaces that are written to Opbeat as a part of
-// the log. Please take care that any values in this map can be marshalled into
-// JSON.
+// CaptureError captures an error and also takes a map of other interfaces that
+// are written to Opbeat as a part of the log. Please take care that any values
+// in this map can be marshalled into JSON.
 func (opbeat *Opbeat) CaptureError(e error, options *Options) error {
 	stacktrace, err := opbeat.getStacktrace()
+
 	if err != nil {
 		return err
+	}
+
+	if options == nil {
+		options = new(Options)
+	}
+	if options.Exception == nil {
+		options.Exception = &Exception{
+			reflect.TypeOf(e).String(),
+			e.Error(),
+			"",
+		}
 	}
 
 	p, err := newPacket(e.Error(), stacktrace, options)
@@ -274,6 +301,10 @@ func (opbeat *Opbeat) CaptureError(e error, options *Options) error {
 // CaptureMessage captures a message along with a level indicating the severity
 // of the message.
 func (opbeat *Opbeat) CaptureMessage(message string, l Level, options *Options) error {
+	if err := opbeat.isConfigured(); err != nil {
+		return err
+	}
+
 	p, err := newPacket(message, nil, options)
 	if err != nil {
 		return err
@@ -306,8 +337,8 @@ func (opbeat *Opbeat) start() {
 					return
 				}
 				err := opbeat.send(p)
-				if err != nil {
-					opbeat.Logger.Println(err)
+				if err != nil && opbeat.logger != nil {
+					opbeat.logger.Println(err)
 				}
 				opbeat.wait.Done()
 			}
@@ -322,6 +353,17 @@ func (opbeat *Opbeat) start() {
 func (opbeat *Opbeat) Close() {
 	opbeat.Wait()
 	close(opbeat.packets)
+}
+
+func (opbeat *Opbeat) isConfigured() error {
+	if opbeat.organizationID == "" || opbeat.appID == "" || opbeat.secretToken == "" {
+		if opbeat.logger != nil {
+			opbeat.logger.Println("Opbeat disabled due to missing credentials")
+		}
+
+		return errors.New("Opbeat disabled due to missing credentials")
+	}
+	return nil
 }
 
 func (opbeat *Opbeat) queue(p *packet) {
@@ -360,8 +402,8 @@ func (opbeat *Opbeat) send(p *packet) error {
 
 	switch res.StatusCode {
 	case 202:
-		if res.Header["Location"] != nil {
-			opbeat.Logger.Printf("Event details at %s", res.Header["Location"][0])
+		if res.Header["Location"] != nil && opbeat.logger != nil {
+			opbeat.logger.Printf("Event details at %s", res.Header["Location"][0])
 		}
 		return nil
 	default:
@@ -426,12 +468,12 @@ type packet struct {
 	Message    string             `json:"message"`
 	Level      Level              `json:"level"`
 	Logger     string             `json:"logger"`
-	Exception  map[string]string  `json:"exception"`
 	Machine    map[string]string  `json:"machine"`
 	Stacktrace map[string][]frame `json:"stacktrace"`
 	Extra      *Extra             `json:"extra"`
 	HTTP       *HTTP              `json:"http"`
 	User       *User              `json:"user"`
+	Exception  *Exception         `json:"exception"`
 }
 
 type frame struct {
@@ -476,6 +518,7 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 	if options != nil {
 		p.HTTP = options.HTTP
 		p.User = options.User
+		p.Exception = options.Exception
 
 		if options.Extra != nil {
 			for k, v := range *options.Extra {
@@ -491,11 +534,6 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 
 		origin := stacktrace[0]
 		p.Culprit = origin.FunctionName
-		p.Exception = map[string]string{
-			"type":   "Error",
-			"value":  message,
-			"module": origin.PackageName,
-		}
 	}
 
 	return p, nil
