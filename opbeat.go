@@ -31,7 +31,6 @@
 // that means that you may also panic any error in your http application and it
 // will be logged by the client.
 //
-//
 // Environment
 //
 // The client supports the following environment variables.
@@ -52,7 +51,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/roncohen/stacko"
+	"github.com/hallas/stacko"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -122,6 +121,7 @@ type Opbeat struct {
 	Host                               string
 	Revision                           string
 	LoggerName                         string
+
 	*log.Logger
 	*http.Client
 }
@@ -139,10 +139,9 @@ func New(organizationID, appID, secretToken string) *Opbeat {
 	opbeat.LoggerName = "default"
 	opbeat.Logger = log.New(os.Stderr, "", log.LstdFlags)
 
-	// Get the current package name to be used in skipping frames later
+	// Get the current package name to be used in skipping frames later.
 	pc, _, _, _ := runtime.Caller(0)
 	pkgName, _ := stacko.FunctionInfo(pc)
-
 	opbeat.thisPackage = pkgName
 
 	opbeat.start()
