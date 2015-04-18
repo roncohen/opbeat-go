@@ -31,7 +31,6 @@
 // that means that you may also panic any error in your http application and it
 // will be logged by the client.
 //
-//
 // Environment
 //
 // The client supports the following environment variables.
@@ -128,10 +127,12 @@ type Opbeat struct {
 	packets                            chan *packet
 	wait                               sync.WaitGroup
 	organizationID, appID, secretToken string
+	thisPackage                        string
 	logger                             StdLogger
 	Host                               string
 	Revision                           string
 	LoggerName                         string
+
 	*http.Client
 }
 
@@ -182,6 +183,11 @@ func NewWithLogger(organizationID, appID, secretToken string, logger StdLogger) 
 	opbeat.LoggerName = "default"
 	opbeat.logger = logger
 
+	// Get the current package name to be used in skipping frames later.
+	pc, _, _, _ := runtime.Caller(0)
+	pkgName, _ := stacko.FunctionInfo(pc)
+	opbeat.thisPackage = pkgName
+
 	opbeat.start()
 
 	return opbeat
@@ -208,11 +214,6 @@ func (opbeat *Opbeat) Handler(h http.Handler) http.Handler {
 		}()
 		h.ServeHTTP(w, r)
 	})
-}
-
-// CaptureError captures an error and sends the log to Opbeat.
-func (opbeat *Opbeat) CaptureError(err error, options *Options) error {
-	return opbeat.CaptureErrorSkip(err, 1, options)
 }
 
 // CaptureErrorWithRequest captures an error along with a `*http.Request` and
@@ -243,20 +244,31 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 
 	options.HTTP = &http
 
-	return opbeat.CaptureErrorSkip(e, 4, options)
+	return opbeat.CaptureError(e, options)
 }
 
-// CaptureErrorSkip captures an error and skips `skip` amount of frames in the
-// stacktrace, this is useful to stop logging library type frames to Opbeat.
-// Also takes a map of other interfaces that are written to Opbeat as a part of
-// the log. Please take care that any values in this map can be marshalled into
-// JSON.
-func (opbeat *Opbeat) CaptureErrorSkip(e error, skip int, options *Options) error {
-	if err := opbeat.isConfigured(); err != nil {
-		return err
+func (opbeat *Opbeat) getStacktrace() (stacko.Stacktrace, error) {
+	stacktrace, err := stacko.NewStacktrace(3)
+	if err != nil {
+		return nil, err
 	}
 
-	stacktrace, err := stacko.NewStacktrace(3 + skip)
+	// Skip the frames from this library
+	for i := 0; i < len(stacktrace); i++ {
+		if stacktrace[i].PackageName != opbeat.thisPackage {
+			return stacktrace[i:], nil
+		}
+	}
+
+	return stacktrace, nil
+}
+
+// CaptureError captures an error and also takes a map of other interfaces that
+// are written to Opbeat as a part of the log. Please take care that any values
+// in this map can be marshalled into JSON.
+func (opbeat *Opbeat) CaptureError(e error, options *Options) error {
+	stacktrace, err := opbeat.getStacktrace()
+
 	if err != nil {
 		return err
 	}
@@ -446,21 +458,6 @@ func Wait() {
 // Close wraps the default client.
 func Close() {
 	DefaultClient.Close()
-}
-
-// Logger interface that works both with the stdlib Logger and Sirupsens LogRus
-type StdLogger interface {
-	Print(...interface{})
-	Printf(string, ...interface{})
-	Println(...interface{})
-
-	Fatal(...interface{})
-	Fatalf(string, ...interface{})
-	Fatalln(...interface{})
-
-	Panic(...interface{})
-	Panicf(string, ...interface{})
-	Panicln(...interface{})
 }
 
 type packet struct {
